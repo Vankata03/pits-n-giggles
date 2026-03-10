@@ -24,12 +24,12 @@ import asyncio
 import json
 import logging
 import socket
-import unittest
 import urllib.error
 import urllib.request
 
 from apps.save_viewer.save_viewer_state import init_state
 from apps.save_viewer.save_web_server import SaveViewerWebServer
+from tests_base import F1TelemetryUnitTestsBase
 
 
 def _get_free_tcp_port() -> int:
@@ -38,7 +38,7 @@ def _get_free_tcp_port() -> int:
         return sock.getsockname()[1]
 
 
-class TestSaveViewerWebServer(unittest.IsolatedAsyncioTestCase):
+class TestSaveViewerWebServer(F1TelemetryUnitTestsBase):
     async def asyncSetUp(self) -> None:
         self.logger = logging.getLogger("test-save-viewer-web-server")
         init_state(self.logger)
