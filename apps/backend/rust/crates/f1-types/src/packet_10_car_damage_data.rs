@@ -208,6 +208,34 @@ impl CarDamageData {
         bytes.push(self.engine_seized as u8);
         bytes
     }
+
+    fn empty(packet_format: u16) -> Self {
+        Self {
+            packet_format,
+            tyres_wear: [0.0; 4],
+            tyres_damage: [0; 4],
+            brakes_damage: [0; 4],
+            tyre_blisters: [0; 4],
+            front_left_wing_damage: 0,
+            front_right_wing_damage: 0,
+            rear_wing_damage: 0,
+            floor_damage: 0,
+            diffuser_damage: 0,
+            sidepod_damage: 0,
+            drs_fault: false,
+            ers_fault: false,
+            gear_box_damage: 0,
+            engine_damage: 0,
+            engine_mguh_wear: 0,
+            engine_es_wear: 0,
+            engine_ce_wear: 0,
+            engine_ice_wear: 0,
+            engine_mguk_wear: 0,
+            engine_tc_wear: 0,
+            engine_blown: false,
+            engine_seized: false,
+        }
+    }
 }
 
 impl fmt::Display for CarDamageData {
@@ -305,20 +333,36 @@ impl PacketCarDamageData {
     pub fn from_values(header: PacketHeader, car_damage_data: Vec<CarDamageData>) -> Self {
         Self {
             header,
-            car_damage_data,
+            car_damage_data: Self::normalize_car_damage_data(header.packet_format, car_damage_data),
         }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let packet_len = CarDamageData::packet_len_for_format(self.header.packet_format);
-        let mut bytes = Vec::with_capacity(
-            PacketHeader::PACKET_LEN + (self.car_damage_data.len() * packet_len),
-        );
+        let mut bytes =
+            Vec::with_capacity(PacketHeader::PACKET_LEN + (Self::MAX_CARS * packet_len));
         bytes.extend_from_slice(&self.header.to_bytes());
-        for car in &self.car_damage_data {
+        for car in self.car_damage_data.iter().take(Self::MAX_CARS) {
             bytes.extend_from_slice(&car.to_bytes());
         }
+        for _ in self.car_damage_data.len().min(Self::MAX_CARS)..Self::MAX_CARS {
+            bytes.extend_from_slice(&CarDamageData::empty(self.header.packet_format).to_bytes());
+        }
         bytes
+    }
+
+    fn normalize_car_damage_data(
+        packet_format: u16,
+        car_damage_data: Vec<CarDamageData>,
+    ) -> Vec<CarDamageData> {
+        let mut normalized = car_damage_data
+            .into_iter()
+            .take(Self::MAX_CARS)
+            .collect::<Vec<_>>();
+        while normalized.len() < Self::MAX_CARS {
+            normalized.push(CarDamageData::empty(packet_format));
+        }
+        normalized
     }
 }
 

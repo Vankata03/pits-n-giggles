@@ -15,6 +15,9 @@ use crate::shutdown::SharedShutdownState;
 
 const IPC_SERVER_NAME: &str = "Backend";
 const PNG_LOST_CONN_TO_PARENT: i32 = 101;
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_GRACE: Duration = Duration::from_secs(12);
+const MAX_MISSED_HEARTBEATS: u32 = 3;
 
 pub struct BackendIpcServer {
     port: u16,
@@ -59,7 +62,7 @@ impl BackendIpcServer {
                 .name("png-ipc-heartbeat".to_string())
                 .spawn(move || {
                     while running.load(Ordering::Relaxed) {
-                        thread::sleep(Duration::from_secs(5));
+                        thread::sleep(HEARTBEAT_INTERVAL);
                         if !running.load(Ordering::Relaxed) {
                             break;
                         }
@@ -69,9 +72,9 @@ impl BackendIpcServer {
                         else {
                             continue;
                         };
-                        if last.elapsed() > Duration::from_secs(5) {
+                        if last.elapsed() > HEARTBEAT_GRACE {
                             let missed = missed_heartbeats.fetch_add(1, Ordering::Relaxed) + 1;
-                            if missed >= 3 {
+                            if missed >= MAX_MISSED_HEARTBEATS {
                                 std::process::exit(PNG_LOST_CONN_TO_PARENT);
                             }
                         }
@@ -189,6 +192,7 @@ fn handle_ipc_message(
             })
         }
         Some("__ping__") => json!({
+            "status": "success",
             "reply": "__pong__",
             "source": IPC_SERVER_NAME,
         }),

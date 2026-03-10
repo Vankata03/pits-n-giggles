@@ -69,7 +69,7 @@ impl CarTelemetryData {
     pub fn parse(data: &[u8]) -> Result<Self, InvalidPacketLengthError> {
         if data.len() != Self::PACKET_LEN {
             return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} expected {}",
+                "Received packet length {} is not equal to expected {}",
                 data.len(),
                 Self::PACKET_LEN
             )));
@@ -198,6 +198,27 @@ impl CarTelemetryData {
         }
         bytes
     }
+
+    fn empty() -> Self {
+        Self {
+            speed: 0,
+            throttle: 0.0,
+            steer: 0.0,
+            brake: 0.0,
+            clutch: 0,
+            gear: 0,
+            engine_rpm: 0,
+            drs: false,
+            rev_lights_percent: 0,
+            rev_lights_bit_value: 0,
+            brakes_temperature: [0; 4],
+            tyres_surface_temperature: [0; 4],
+            tyres_inner_temperature: [0; 4],
+            engine_temperature: 0,
+            tyres_pressure: [0.0; 4],
+            surface_type: [0; 4],
+        }
+    }
 }
 
 impl fmt::Display for CarTelemetryData {
@@ -296,7 +317,7 @@ impl PacketCarTelemetryData {
     ) -> Self {
         Self {
             header,
-            car_telemetry_data,
+            car_telemetry_data: Self::normalize_car_telemetry_data(car_telemetry_data),
             mfd_panel_index,
             mfd_panel_index_secondary_player,
             suggested_gear,
@@ -306,13 +327,29 @@ impl PacketCarTelemetryData {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(PacketHeader::PACKET_LEN + Self::PAYLOAD_LEN);
         bytes.extend_from_slice(&self.header.to_bytes());
-        for telemetry in &self.car_telemetry_data {
+        for telemetry in self.car_telemetry_data.iter().take(Self::MAX_CARS) {
             bytes.extend_from_slice(&telemetry.to_bytes());
+        }
+        for _ in self.car_telemetry_data.len().min(Self::MAX_CARS)..Self::MAX_CARS {
+            bytes.extend_from_slice(&CarTelemetryData::empty().to_bytes());
         }
         bytes.push(self.mfd_panel_index);
         bytes.push(self.mfd_panel_index_secondary_player);
         bytes.push(self.suggested_gear as u8);
         bytes
+    }
+
+    fn normalize_car_telemetry_data(
+        car_telemetry_data: Vec<CarTelemetryData>,
+    ) -> Vec<CarTelemetryData> {
+        let mut normalized = car_telemetry_data
+            .into_iter()
+            .take(Self::MAX_CARS)
+            .collect::<Vec<_>>();
+        while normalized.len() < Self::MAX_CARS {
+            normalized.push(CarTelemetryData::empty());
+        }
+        normalized
     }
 }
 

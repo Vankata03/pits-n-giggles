@@ -137,3 +137,37 @@ fn packet_car_telemetry_rejects_wrong_length() {
         ))
     );
 }
+
+#[test]
+fn packet_car_telemetry_from_values_pads_to_fixed_layout() {
+    let packet =
+        PacketCarTelemetryData::from_values(sample_header(), vec![sample_telemetry(0)], 255, 2, 6);
+
+    assert_eq!(
+        packet.car_telemetry_data.len(),
+        PacketCarTelemetryData::MAX_CARS
+    );
+
+    let bytes = packet.to_bytes();
+    assert_eq!(
+        bytes.len(),
+        PacketHeader::PACKET_LEN + PacketCarTelemetryData::PAYLOAD_LEN
+    );
+}
+
+#[test]
+fn packet_car_telemetry_from_values_truncates_extra_entries() {
+    let telemetry = (0..(PacketCarTelemetryData::MAX_CARS as u8 + 3))
+        .map(sample_telemetry)
+        .collect::<Vec<_>>();
+    let packet = PacketCarTelemetryData::from_values(sample_header(), telemetry, 255, 2, 6);
+
+    assert_eq!(
+        packet.car_telemetry_data.len(),
+        PacketCarTelemetryData::MAX_CARS
+    );
+    assert_eq!(
+        packet.car_telemetry_data.last().map(|entry| entry.speed),
+        Some(300 + PacketCarTelemetryData::MAX_CARS as u16 - 1)
+    );
+}

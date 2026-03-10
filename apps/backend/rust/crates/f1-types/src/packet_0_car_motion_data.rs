@@ -155,6 +155,29 @@ impl CarMotionData {
         bytes[56..60].copy_from_slice(&self.roll.to_le_bytes());
         bytes
     }
+
+    fn empty() -> Self {
+        Self {
+            world_position_x: 0.0,
+            world_position_y: 0.0,
+            world_position_z: 0.0,
+            world_velocity_x: 0.0,
+            world_velocity_y: 0.0,
+            world_velocity_z: 0.0,
+            world_forward_dir_x: 0,
+            world_forward_dir_y: 0,
+            world_forward_dir_z: 0,
+            world_right_dir_x: 0,
+            world_right_dir_y: 0,
+            world_right_dir_z: 0,
+            g_force_lateral: 0.0,
+            g_force_longitudinal: 0.0,
+            g_force_vertical: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+        }
+    }
 }
 
 impl fmt::Display for CarMotionData {
@@ -303,17 +326,31 @@ impl PacketMotionData {
     pub fn from_values(header: PacketHeader, car_motion_data: Vec<CarMotionData>) -> Self {
         Self {
             header,
-            car_motion_data,
+            car_motion_data: Self::normalize_car_motion_data(car_motion_data),
         }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(PacketHeader::PACKET_LEN + Self::PAYLOAD_LEN);
         bytes.extend_from_slice(&self.header.to_bytes());
-        for car in &self.car_motion_data {
+        for car in self.car_motion_data.iter().take(Self::MAX_CARS) {
             bytes.extend_from_slice(&car.to_bytes());
         }
+        for _ in self.car_motion_data.len().min(Self::MAX_CARS)..Self::MAX_CARS {
+            bytes.extend_from_slice(&CarMotionData::empty().to_bytes());
+        }
         bytes
+    }
+
+    fn normalize_car_motion_data(car_motion_data: Vec<CarMotionData>) -> Vec<CarMotionData> {
+        let mut normalized = car_motion_data
+            .into_iter()
+            .take(Self::MAX_CARS)
+            .collect::<Vec<_>>();
+        while normalized.len() < Self::MAX_CARS {
+            normalized.push(CarMotionData::empty());
+        }
+        normalized
     }
 }
 

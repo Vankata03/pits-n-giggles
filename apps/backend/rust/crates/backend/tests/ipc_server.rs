@@ -264,6 +264,10 @@ async fn ipc_server_handles_launcher_commands() {
     assert_eq!(heartbeat["status"], "success");
     assert_eq!(heartbeat["reply"], "__heartbeat_ack__");
 
+    let ping = ipc_request(server.port(), "__ping__", json!({}));
+    assert_eq!(ping["status"], "success");
+    assert_eq!(ping["reply"], "__pong__");
+
     let stats = ipc_request(server.port(), "get-stats", json!({}));
     assert_eq!(stats["status"], "success");
     assert_eq!(

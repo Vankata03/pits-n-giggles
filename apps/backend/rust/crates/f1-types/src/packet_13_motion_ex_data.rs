@@ -265,7 +265,10 @@ impl PacketMotionExData {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(Self::packet_len_for_format(self.header.packet_format));
+        let mut bytes = Vec::with_capacity(
+            PacketHeader::PACKET_LEN + Self::packet_len_for_format(self.header.packet_format),
+        );
+        bytes.extend_from_slice(&self.header.to_bytes());
 
         for values in [
             &self.suspension_position,

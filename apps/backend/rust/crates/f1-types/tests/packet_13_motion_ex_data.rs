@@ -56,7 +56,9 @@ fn sample_motion_ex(packet_format: u16) -> PacketMotionExData {
 fn motion_ex_round_trips_for_2023_layout() {
     let packet = sample_motion_ex(2023);
     let bytes = packet.to_bytes();
-    let parsed = PacketMotionExData::parse(sample_header(2023), &bytes).expect("parse packet");
+    let header = PacketHeader::parse(&bytes[..PacketHeader::PACKET_LEN]).expect("parse header");
+    let parsed = PacketMotionExData::parse(header, &bytes[PacketHeader::PACKET_LEN..])
+        .expect("parse packet");
 
     assert_eq!(PacketMotionExData::PACKET_LEN_23, 188);
     assert_eq!(parsed, packet);
@@ -68,7 +70,9 @@ fn motion_ex_round_trips_for_2023_layout() {
 fn motion_ex_round_trips_for_2025_layout() {
     let packet = sample_motion_ex(2025);
     let bytes = packet.to_bytes();
-    let parsed = PacketMotionExData::parse(sample_header(2025), &bytes).expect("parse packet");
+    let header = PacketHeader::parse(&bytes[..PacketHeader::PACKET_LEN]).expect("parse header");
+    let parsed = PacketMotionExData::parse(header, &bytes[PacketHeader::PACKET_LEN..])
+        .expect("parse packet");
 
     assert_eq!(PacketMotionExData::PACKET_LEN_25, 244);
     assert_eq!(parsed, packet);

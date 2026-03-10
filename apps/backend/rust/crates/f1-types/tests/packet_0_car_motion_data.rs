@@ -130,3 +130,33 @@ fn packet_motion_data_serializes_to_python_compatible_shape() {
         })
     );
 }
+
+#[test]
+fn packet_motion_data_from_values_pads_to_fixed_layout() {
+    let packet = PacketMotionData::from_values(sample_header(), vec![sample_car(0)]);
+
+    assert_eq!(packet.car_motion_data.len(), PacketMotionData::MAX_CARS);
+
+    let bytes = packet.to_bytes();
+    assert_eq!(
+        bytes.len(),
+        PacketHeader::PACKET_LEN + PacketMotionData::PAYLOAD_LEN
+    );
+}
+
+#[test]
+fn packet_motion_data_from_values_truncates_extra_entries() {
+    let cars = (0..(PacketMotionData::MAX_CARS as i16 + 3))
+        .map(sample_car)
+        .collect::<Vec<_>>();
+    let packet = PacketMotionData::from_values(sample_header(), cars);
+
+    assert_eq!(packet.car_motion_data.len(), PacketMotionData::MAX_CARS);
+    assert_eq!(
+        packet
+            .car_motion_data
+            .last()
+            .map(|car| car.world_position_x),
+        Some(PacketMotionData::MAX_CARS as f32)
+    );
+}

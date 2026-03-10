@@ -151,3 +151,34 @@ fn packet_car_damage_data_rejects_wrong_length() {
         ))
     );
 }
+
+#[test]
+fn packet_car_damage_from_values_pads_to_fixed_layout() {
+    let packet =
+        PacketCarDamageData::from_values(header_for_format(2025), vec![sample_damage(2025, 0)]);
+
+    assert_eq!(packet.car_damage_data.len(), PacketCarDamageData::MAX_CARS);
+
+    let bytes = packet.to_bytes();
+    assert_eq!(
+        bytes.len(),
+        PacketHeader::PACKET_LEN + (PacketCarDamageData::MAX_CARS * CarDamageData::PACKET_LEN_25)
+    );
+}
+
+#[test]
+fn packet_car_damage_from_values_truncates_extra_entries() {
+    let cars = (0..(PacketCarDamageData::MAX_CARS as u8 + 3))
+        .map(|seed| sample_damage(2024, seed))
+        .collect::<Vec<_>>();
+    let packet = PacketCarDamageData::from_values(header_for_format(2024), cars);
+
+    assert_eq!(packet.car_damage_data.len(), PacketCarDamageData::MAX_CARS);
+    assert_eq!(
+        packet
+            .car_damage_data
+            .last()
+            .map(|entry| entry.front_left_wing_damage),
+        Some(13 + PacketCarDamageData::MAX_CARS as u8 - 1)
+    );
+}
