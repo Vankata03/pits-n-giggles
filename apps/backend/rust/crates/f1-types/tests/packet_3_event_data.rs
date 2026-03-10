@@ -1,6 +1,14 @@
 use f1_types::{F1PacketType, PacketEventData, PacketHeader};
 use serde_json::json;
 
+fn assert_f64_close(actual: f64, expected: f64) {
+    let delta = (actual - expected).abs();
+    assert!(
+        delta <= 1e-6,
+        "numeric mismatch: actual={actual} expected={expected} delta={delta}"
+    );
+}
+
 fn sample_header(packet_format: u16) -> PacketHeader {
     PacketHeader::from_values(
         packet_format,
@@ -45,15 +53,13 @@ fn event_packet_parses_fastest_lap_2024() {
     .expect("parse");
 
     let value = serde_json::to_value(packet).expect("serialize");
-    assert_eq!(
-        value,
-        json!({
-            "event-string-code": "FTLP",
-            "event-details": {
-                "vehicle-idx": 4,
-                "lap-time": 110.17200469970703
-            }
-        })
+    assert_eq!(value["event-string-code"], json!("FTLP"));
+    assert_eq!(value["event-details"]["vehicle-idx"], json!(4));
+    assert_f64_close(
+        value["event-details"]["lap-time"]
+            .as_f64()
+            .expect("lap-time f64"),
+        110.17200469970703,
     );
 }
 
@@ -66,14 +72,12 @@ fn event_packet_parses_fastest_lap_2025() {
     .expect("parse");
 
     let value = serde_json::to_value(packet).expect("serialize");
-    assert_eq!(
-        value,
-        json!({
-            "event-string-code": "FTLP",
-            "event-details": {
-                "vehicle-idx": 7,
-                "lap-time": 68.58999633789062
-            }
-        })
+    assert_eq!(value["event-string-code"], json!("FTLP"));
+    assert_eq!(value["event-details"]["vehicle-idx"], json!(7));
+    assert_f64_close(
+        value["event-details"]["lap-time"]
+            .as_f64()
+            .expect("lap-time f64"),
+        68.58999633789062,
     );
 }

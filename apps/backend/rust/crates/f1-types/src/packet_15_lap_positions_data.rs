@@ -25,24 +25,11 @@ impl PacketLapPositionsData {
         lap_positions: Vec<Vec<u8>>,
     ) -> Self {
         let num_laps = Self::normalized_num_laps(num_laps);
-        let num_laps_usize = usize::from(num_laps);
-        let mut lap_positions = lap_positions
-            .into_iter()
-            .take(num_laps_usize)
-            .map(|mut row| {
-                row.truncate(Self::MAX_CARS);
-                row.resize(Self::MAX_CARS, 0);
-                row
-            })
-            .collect::<Vec<_>>();
-        while lap_positions.len() < num_laps_usize {
-            lap_positions.push(vec![0u8; Self::MAX_CARS]);
-        }
         Self {
             header,
             num_laps,
             lap_start,
-            lap_positions,
+            lap_positions: Self::normalized_lap_positions(num_laps, lap_positions),
         }
     }
 
@@ -86,20 +73,16 @@ impl PacketLapPositionsData {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let num_laps = Self::normalized_num_laps(self.num_laps);
+        let lap_positions = Self::normalized_lap_positions(num_laps, self.lap_positions.clone());
         let mut bytes = Vec::with_capacity(PacketHeader::PACKET_LEN + Self::PAYLOAD_LEN);
         bytes.extend_from_slice(&self.header.to_bytes());
         bytes.push(num_laps);
         bytes.push(self.lap_start);
 
         let mut flat = vec![0u8; Self::TOTAL_BYTES];
-        for (lap_index, row) in self
-            .lap_positions
-            .iter()
-            .take(usize::from(num_laps))
-            .enumerate()
-        {
+        for (lap_index, row) in lap_positions.iter().enumerate() {
             let start = lap_index * Self::MAX_CARS;
-            for (car_index, value) in row.iter().take(Self::MAX_CARS).enumerate() {
+            for (car_index, value) in row.iter().enumerate() {
                 flat[start + car_index] = *value;
             }
         }
@@ -109,6 +92,23 @@ impl PacketLapPositionsData {
 
     fn normalized_num_laps(num_laps: u8) -> u8 {
         num_laps.min(Self::MAX_LAPS as u8)
+    }
+
+    fn normalized_lap_positions(num_laps: u8, lap_positions: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        let num_laps_usize = usize::from(num_laps);
+        let mut lap_positions = lap_positions
+            .into_iter()
+            .take(num_laps_usize)
+            .map(|mut row| {
+                row.truncate(Self::MAX_CARS);
+                row.resize(Self::MAX_CARS, 0);
+                row
+            })
+            .collect::<Vec<_>>();
+        while lap_positions.len() < num_laps_usize {
+            lap_positions.push(vec![0u8; Self::MAX_CARS]);
+        }
+        lap_positions
     }
 }
 
@@ -156,10 +156,12 @@ impl Serialize for PacketLapPositionsData {
     where
         S: Serializer,
     {
+        let num_laps = Self::normalized_num_laps(self.num_laps);
+        let lap_positions = Self::normalized_lap_positions(num_laps, self.lap_positions.clone());
         let mut map = serializer.serialize_map(Some(3))?;
-        map.serialize_entry("num-laps", &self.num_laps)?;
+        map.serialize_entry("num-laps", &num_laps)?;
         map.serialize_entry("lap-start", &self.lap_start)?;
-        map.serialize_entry("lap-positions", &self.lap_positions)?;
+        map.serialize_entry("lap-positions", &lap_positions)?;
         map.end()
     }
 }

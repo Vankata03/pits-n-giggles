@@ -15,7 +15,6 @@ use crate::runtime::SharedSessionState;
 use crate::shutdown::SharedShutdownState;
 
 const IPC_SERVER_NAME: &str = "Backend";
-const PNG_LOST_CONN_TO_PARENT: i32 = 101;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_GRACE: Duration = Duration::from_secs(12);
 const MAX_MISSED_HEARTBEATS: u32 = 3;
@@ -45,6 +44,7 @@ impl BackendIpcServer {
             let running = running.clone();
             let last_heartbeat = last_heartbeat.clone();
             let missed_heartbeats = missed_heartbeats.clone();
+            let shutdown_state = shutdown_state.clone();
             thread::Builder::new()
                 .name("png-ipc-heartbeat".to_string())
                 .spawn(move || {
@@ -65,7 +65,10 @@ impl BackendIpcServer {
                         if last.elapsed() > HEARTBEAT_GRACE {
                             let missed = missed_heartbeats.fetch_add(1, Ordering::Relaxed) + 1;
                             if missed >= MAX_MISSED_HEARTBEATS {
-                                std::process::exit(PNG_LOST_CONN_TO_PARENT);
+                                shutdown_state
+                                    .request_shutdown("launcher heartbeat missed".to_string());
+                                running.store(false, Ordering::Relaxed);
+                                break;
                             }
                         }
                     }

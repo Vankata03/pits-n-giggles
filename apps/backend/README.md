@@ -3,6 +3,7 @@
 The backend now lives in Rust under [`apps/backend/rust`](./rust).
 
 What it owns:
+
 - telemetry ingest
 - packet parsing and dispatch
 - shared session state

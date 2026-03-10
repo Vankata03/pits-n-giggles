@@ -31,7 +31,7 @@ fn build_payload(packet_format: u16) -> Vec<u8> {
     payload[0] = if packet_format == 2025 { 0 } else { 1 };
     payload[1] = if packet_format == 2025 { 0 } else { 30 };
     payload[2] = if packet_format == 2025 { 0 } else { 22 };
-    payload[3] = 25u8.min(5);
+    payload[3] = 5;
     payload[4..6].copy_from_slice(&4323u16.to_le_bytes());
     payload[6] = if packet_format == 2023 { 10 } else { 15 };
     payload[7] = match packet_format {

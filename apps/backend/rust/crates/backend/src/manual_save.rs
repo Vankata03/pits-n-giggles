@@ -12,6 +12,19 @@ pub enum SaveMode {
     AutoFinalClassification,
 }
 
+fn sanitize_filename_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
 pub async fn save_session_to_disk(
     session_state: SharedSessionState,
     version: &str,
@@ -43,6 +56,7 @@ pub async fn save_session_to_disk_with_mode(
     let now = Local::now();
     let date_str = now.format("%Y_%m_%d").to_string();
     let timestamp_str = now.format("%Y_%m_%d_%H_%M_%S").to_string();
+    let event_prefix = sanitize_filename_component(&event_prefix);
     let file_name = match mode {
         SaveMode::Manual => format!("{event_prefix}Manual_{timestamp_str}.json"),
         SaveMode::AutoFinalClassification => format!("{event_prefix}{timestamp_str}.json"),
@@ -93,4 +107,21 @@ pub async fn save_session_to_disk_with_mode(
         "status": "success",
         "message": format!("Data saved to {}", file_path.display()),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_filename_component;
+
+    #[test]
+    fn sanitize_filename_component_replaces_unsafe_chars() {
+        assert_eq!(
+            sanitize_filename_component("../Race:Monza/2025_"),
+            ".._Race_Monza_2025_"
+        );
+        assert_eq!(
+            sanitize_filename_component("Race Weekend_"),
+            "Race_Weekend_"
+        );
+    }
 }
