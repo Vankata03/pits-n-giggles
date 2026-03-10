@@ -99,3 +99,26 @@ fn lap_positions_reject_num_laps_above_max() {
         )))
     );
 }
+
+#[test]
+fn lap_positions_from_values_pads_missing_rows_and_columns() {
+    let packet =
+        PacketLapPositionsData::from_values(sample_header(), 3, 1, vec![vec![9, 8, 7], vec![6, 5]]);
+
+    assert_eq!(packet.num_laps, 3);
+    assert_eq!(packet.lap_positions.len(), 3);
+    assert_eq!(
+        packet.lap_positions[0].len(),
+        PacketLapPositionsData::MAX_CARS
+    );
+    assert_eq!(
+        packet.lap_positions[1].len(),
+        PacketLapPositionsData::MAX_CARS
+    );
+    assert_eq!(
+        packet.lap_positions[2],
+        vec![0; PacketLapPositionsData::MAX_CARS]
+    );
+    assert_eq!(&packet.lap_positions[0][..3], &[9, 8, 7]);
+    assert_eq!(&packet.lap_positions[1][..2], &[6, 5]);
+}

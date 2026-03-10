@@ -25,15 +25,24 @@ impl PacketLapPositionsData {
         lap_positions: Vec<Vec<u8>>,
     ) -> Self {
         let num_laps = Self::normalized_num_laps(num_laps);
+        let num_laps_usize = usize::from(num_laps);
+        let mut lap_positions = lap_positions
+            .into_iter()
+            .take(num_laps_usize)
+            .map(|mut row| {
+                row.truncate(Self::MAX_CARS);
+                row.resize(Self::MAX_CARS, 0);
+                row
+            })
+            .collect::<Vec<_>>();
+        while lap_positions.len() < num_laps_usize {
+            lap_positions.push(vec![0u8; Self::MAX_CARS]);
+        }
         Self {
             header,
             num_laps,
             lap_start,
-            lap_positions: lap_positions
-                .into_iter()
-                .take(num_laps as usize)
-                .map(|row| row.into_iter().take(Self::MAX_CARS).collect())
-                .collect(),
+            lap_positions,
         }
     }
 

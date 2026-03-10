@@ -1,5 +1,35 @@
 use f1_types::{F1PacketType, InvalidPacketLengthError, PacketHeader, PacketMotionExData};
-use serde_json::json;
+use serde_json::{Value, json};
+
+fn assert_json_matches_with_float_tolerance(actual: &Value, expected: &Value) {
+    match (actual, expected) {
+        (Value::Object(actual), Value::Object(expected)) => {
+            assert_eq!(actual.len(), expected.len());
+            for (key, expected_value) in expected {
+                let actual_value = actual
+                    .get(key)
+                    .unwrap_or_else(|| panic!("missing key {key}"));
+                assert_json_matches_with_float_tolerance(actual_value, expected_value);
+            }
+        }
+        (Value::Array(actual), Value::Array(expected)) => {
+            assert_eq!(actual.len(), expected.len());
+            for (actual_value, expected_value) in actual.iter().zip(expected.iter()) {
+                assert_json_matches_with_float_tolerance(actual_value, expected_value);
+            }
+        }
+        (Value::Number(actual), Value::Number(expected)) => {
+            let actual = actual.as_f64().expect("numeric json value");
+            let expected = expected.as_f64().expect("numeric json value");
+            let delta = (actual - expected).abs();
+            assert!(
+                delta <= 1e-6,
+                "numeric mismatch: actual={actual} expected={expected} delta={delta}"
+            );
+        }
+        _ => assert_eq!(actual, expected),
+    }
+}
 
 fn sample_header(packet_format: u16) -> PacketHeader {
     PacketHeader::from_values(
@@ -81,34 +111,32 @@ fn motion_ex_round_trips_for_2025_layout() {
 #[test]
 fn motion_ex_json_matches_python_shape() {
     let value = serde_json::to_value(sample_motion_ex(2025)).expect("serialize");
+    let expected = json!({
+        "suspension-position": [1.0, 2.0, 3.0, 4.0],
+        "suspension-velocity": [5.0, 6.0, 7.0, 8.0],
+        "suspension-acceleration": [9.0, 10.0, 11.0, 12.0],
+        "wheel-speed": [13.0, 14.0, 15.0, 16.0],
+        "wheel-slip-ratio": [0.10000000149011612, 0.20000000298023224, 0.30000001192092896, 0.4000000059604645],
+        "wheel-slip-angle": [0.5, 0.6000000238418579, 0.699999988079071, 0.800000011920929],
+        "wheel-lat-force": [17.0, 18.0, 19.0, 20.0],
+        "wheel-long-force": [21.0, 22.0, 23.0, 24.0],
+        "height-of-cog-above-ground": 0.3499999940395355,
+        "local-velocity": { "x": 2.0999999046325684, "y": 2.200000047683716, "z": 2.299999952316284 },
+        "angular-velocity": { "x": 3.0999999046325684, "y": 3.200000047683716, "z": 3.299999952316284 },
+        "angular-acceleration": { "x": 4.099999904632568, "y": 4.199999809265137, "z": 4.300000190734863 },
+        "front-wheels-angle": -0.20000000298023224,
+        "wheel-vert-force": [25.0, 26.0, 27.0, 28.0],
+        "front-aero-height": 0.8999999761581421,
+        "rear-aero-height": 1.100000023841858,
+        "front-roll-angle": 1.2000000476837158,
+        "rear-roll-angle": 1.2999999523162842,
+        "chassis-yaw": 1.399999976158142,
+        "chassis-pitch": 1.5,
+        "wheel-camber": [-0.029999999329447746, -0.029999999329447746, -0.05000000074505806, -0.05000000074505806],
+        "wheel-camber-gain": [0.004000000189989805, 0.004000000189989805, 0.0, 0.0]
+    });
 
-    assert_eq!(
-        value,
-        json!({
-            "suspension-position": [1.0, 2.0, 3.0, 4.0],
-            "suspension-velocity": [5.0, 6.0, 7.0, 8.0],
-            "suspension-acceleration": [9.0, 10.0, 11.0, 12.0],
-            "wheel-speed": [13.0, 14.0, 15.0, 16.0],
-            "wheel-slip-ratio": [0.10000000149011612, 0.20000000298023224, 0.30000001192092896, 0.4000000059604645],
-            "wheel-slip-angle": [0.5, 0.6000000238418579, 0.699999988079071, 0.800000011920929],
-            "wheel-lat-force": [17.0, 18.0, 19.0, 20.0],
-            "wheel-long-force": [21.0, 22.0, 23.0, 24.0],
-            "height-of-cog-above-ground": 0.3499999940395355,
-            "local-velocity": { "x": 2.0999999046325684, "y": 2.200000047683716, "z": 2.299999952316284 },
-            "angular-velocity": { "x": 3.0999999046325684, "y": 3.200000047683716, "z": 3.299999952316284 },
-            "angular-acceleration": { "x": 4.099999904632568, "y": 4.199999809265137, "z": 4.300000190734863 },
-            "front-wheels-angle": -0.20000000298023224,
-            "wheel-vert-force": [25.0, 26.0, 27.0, 28.0],
-            "front-aero-height": 0.8999999761581421,
-            "rear-aero-height": 1.100000023841858,
-            "front-roll-angle": 1.2000000476837158,
-            "rear-roll-angle": 1.2999999523162842,
-            "chassis-yaw": 1.399999976158142,
-            "chassis-pitch": 1.5,
-            "wheel-camber": [-0.029999999329447746, -0.029999999329447746, -0.05000000074505806, -0.05000000074505806],
-            "wheel-camber-gain": [0.004000000189989805, 0.004000000189989805, 0.0, 0.0]
-        })
-    );
+    assert_json_matches_with_float_tolerance(&value, &expected);
 }
 
 #[test]

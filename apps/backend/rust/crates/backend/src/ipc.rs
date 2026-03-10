@@ -25,6 +25,7 @@ pub struct BackendIpcServer {
     running: Arc<AtomicBool>,
     server_thread: Option<JoinHandle<()>>,
     heartbeat_thread: Option<JoinHandle<()>>,
+    heartbeat_stop_sender: Option<mpsc::Sender<()>>,
 }
 
 impl BackendIpcServer {
@@ -38,6 +39,7 @@ impl BackendIpcServer {
         let missed_heartbeats = Arc::new(AtomicU32::new(0));
         let runtime_handle = Handle::current();
         let (startup_sender, startup_receiver) = mpsc::channel::<io::Result<u16>>();
+        let (heartbeat_stop_sender, heartbeat_stop_receiver) = mpsc::channel::<()>();
 
         let heartbeat_thread = {
             let running = running.clone();
@@ -47,7 +49,10 @@ impl BackendIpcServer {
                 .name("png-ipc-heartbeat".to_string())
                 .spawn(move || {
                     while running.load(Ordering::Relaxed) {
-                        thread::sleep(HEARTBEAT_INTERVAL);
+                        match heartbeat_stop_receiver.recv_timeout(HEARTBEAT_INTERVAL) {
+                            Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        }
                         if !running.load(Ordering::Relaxed) {
                             break;
                         }
@@ -159,6 +164,7 @@ impl BackendIpcServer {
             running,
             server_thread: Some(server_thread),
             heartbeat_thread: Some(heartbeat_thread),
+            heartbeat_stop_sender: Some(heartbeat_stop_sender),
         })
     }
 
@@ -168,6 +174,9 @@ impl BackendIpcServer {
 
     pub fn close(&mut self) {
         self.running.store(false, Ordering::Relaxed);
+        if let Some(sender) = self.heartbeat_stop_sender.take() {
+            let _ = sender.send(());
+        }
         if let Some(thread) = self.server_thread.take() {
             let _ = thread.join();
         }

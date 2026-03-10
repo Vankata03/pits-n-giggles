@@ -126,27 +126,21 @@ impl SharedFrontendUpdateState {
     pub fn push_hud_cycle_mfd_notification(&self) {
         self.push(json!({
             "message-type": "hud-cycle-mfd-notification",
-            "message": {
-                "dummy": "dummy",
-            },
+            "message": {},
         }));
     }
 
     pub fn push_hud_prev_page_mfd_notification(&self) {
         self.push(json!({
             "message-type": "hud-prev-page-mfd-notification",
-            "message": {
-                "dummy": "dummy",
-            },
+            "message": {},
         }));
     }
 
     pub fn push_hud_mfd_interaction_notification(&self) {
         self.push(json!({
             "message-type": "hud-mfd-interaction-notification",
-            "message": {
-                "dummy": "dummy",
-            },
+            "message": {},
         }));
     }
 }
