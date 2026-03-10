@@ -23,12 +23,11 @@
 
 # -------------------------------------- IMPORTS -----------------------------------------------------------------------
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
-import aiofiles
 
 # -------------------------------------- FUNCTIONS ---------------------------------------------------------------------
 
@@ -60,7 +59,6 @@ async def save_json_to_file(
 
     file_path = dir_path / filename
     json_str = json.dumps(data, separators=(",", ":"))
-    async with aiofiles.open(file_path, mode='w', encoding='utf-8') as json_file:
-        await json_file.write(json_str)
+    await asyncio.to_thread(file_path.write_text, json_str, encoding="utf-8")
 
     return file_path
