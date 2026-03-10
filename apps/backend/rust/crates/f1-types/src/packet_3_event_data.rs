@@ -449,7 +449,7 @@ impl PacketEventData {
     pub fn parse(header: PacketHeader, packet: &[u8]) -> Result<Self, PacketParsingError> {
         if packet.len() != Self::PACKET_LEN {
             return Err(PacketParsingError::new(format!(
-                "Invalid packet length. Received packet length {} is not equal to expected {}",
+                "Received packet length {} is not equal to expected {}",
                 packet.len(),
                 Self::PACKET_LEN
             )));

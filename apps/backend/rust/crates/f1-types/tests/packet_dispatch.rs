@@ -102,6 +102,6 @@ fn event_packet_parse_uses_typed_error() {
 
     assert_eq!(
         error.to_string(),
-        "Malformed packet. Invalid packet length. Received packet length 4 is not equal to expected 16"
+        "Malformed packet. Received packet length 4 is not equal to expected 16"
     );
 }
