@@ -1,5 +1,5 @@
 use crate::PacketHeader;
-use crate::errors::InvalidPacketLengthError;
+use crate::errors::{InvalidPacketLengthError, PacketParsingError};
 use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
 use std::fmt;
@@ -37,21 +37,25 @@ impl PacketLapPositionsData {
         }
     }
 
-    pub fn parse(header: PacketHeader, packet: &[u8]) -> Result<Self, InvalidPacketLengthError> {
+    pub fn parse(header: PacketHeader, packet: &[u8]) -> Result<Self, PacketLapPositionsError> {
         if packet.len() != Self::PAYLOAD_LEN {
-            return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} is not equal to expected {}",
-                packet.len(),
-                Self::PAYLOAD_LEN
-            )));
+            return Err(PacketLapPositionsError::from(
+                InvalidPacketLengthError::new(format!(
+                    "Received packet length {} is not equal to expected {}",
+                    packet.len(),
+                    Self::PAYLOAD_LEN
+                )),
+            ));
         }
 
         let num_laps = packet[0];
         if usize::from(num_laps) > Self::MAX_LAPS {
-            return Err(InvalidPacketLengthError::new(format!(
-                "Received num laps {} exceeds max {}",
-                num_laps,
-                Self::MAX_LAPS
+            return Err(PacketLapPositionsError::from(PacketParsingError::new(
+                format!(
+                    "Received num laps {} exceeds max {}",
+                    num_laps,
+                    Self::MAX_LAPS
+                ),
             )));
         }
         let lap_start = packet[1];
@@ -98,6 +102,35 @@ impl PacketLapPositionsData {
         num_laps.min(Self::MAX_LAPS as u8)
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PacketLapPositionsError {
+    InvalidPacketLength(InvalidPacketLengthError),
+    PacketParsing(PacketParsingError),
+}
+
+impl From<InvalidPacketLengthError> for PacketLapPositionsError {
+    fn from(value: InvalidPacketLengthError) -> Self {
+        Self::InvalidPacketLength(value)
+    }
+}
+
+impl From<PacketParsingError> for PacketLapPositionsError {
+    fn from(value: PacketParsingError) -> Self {
+        Self::PacketParsing(value)
+    }
+}
+
+impl std::fmt::Display for PacketLapPositionsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPacketLength(error) => error.fmt(f),
+            Self::PacketParsing(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for PacketLapPositionsError {}
 
 impl fmt::Display for PacketLapPositionsData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

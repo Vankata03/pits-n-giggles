@@ -1,4 +1,7 @@
-use f1_types::{F1PacketType, InvalidPacketLengthError, PacketHeader, PacketLapPositionsData};
+use f1_types::{
+    F1PacketType, InvalidPacketLengthError, PacketHeader, PacketLapPositionsData,
+    PacketLapPositionsError, PacketParsingError,
+};
 use serde_json::json;
 
 fn sample_header() -> PacketHeader {
@@ -70,11 +73,11 @@ fn lap_positions_reject_wrong_length() {
 
     assert_eq!(
         error,
-        InvalidPacketLengthError::new(format!(
+        PacketLapPositionsError::InvalidPacketLength(InvalidPacketLengthError::new(format!(
             "Received packet length {} is not equal to expected {}",
             100,
             PacketLapPositionsData::PAYLOAD_LEN
-        ))
+        )))
     );
 }
 
@@ -89,10 +92,10 @@ fn lap_positions_reject_num_laps_above_max() {
 
     assert_eq!(
         error,
-        InvalidPacketLengthError::new(format!(
+        PacketLapPositionsError::PacketParsing(PacketParsingError::new(format!(
             "Received num laps {} exceeds max {}",
             PacketLapPositionsData::MAX_LAPS as u8 + 1,
             PacketLapPositionsData::MAX_LAPS
-        ))
+        )))
     );
 }

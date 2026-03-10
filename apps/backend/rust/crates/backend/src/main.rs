@@ -265,13 +265,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .local_addr()
         .map_err(|error| format!("failed to inspect bound address: {error}"))?;
 
+    let web_shutdown_state = shutdown_state.clone();
     let mut web_task = tokio::spawn(async move {
         serve(
             shared_state,
             derived_state,
             frontend_update_state,
             control_state,
-            shutdown_state,
+            web_shutdown_state,
             web_config,
         )
         .await
@@ -327,6 +328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             result = tokio::signal::ctrl_c() => {
                 result?;
+                shutdown_state.request_shutdown("ctrl_c".to_string());
                 if !cli.quiet {
                     eprintln!("shutdown requested");
                 }
@@ -337,6 +339,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(server) = ipc_server.as_mut() {
         server.close();
+    }
+    if !web_task.is_finished() {
+        let web_result = web_task
+            .await
+            .map_err(|error| format!("web task join error: {error}"))?;
+        web_result?;
     }
 
     Ok(())

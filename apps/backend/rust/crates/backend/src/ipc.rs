@@ -1,6 +1,7 @@
 use std::io;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -32,27 +33,11 @@ impl BackendIpcServer {
         control_state: SharedBackendControlState,
         shutdown_state: SharedShutdownState,
     ) -> io::Result<Self> {
-        let context = zmq::Context::new();
-        let socket = context.socket(zmq::REP).map_err(io::Error::other)?;
-        socket.bind("tcp://127.0.0.1:*").map_err(io::Error::other)?;
-        let endpoint = socket.get_last_endpoint().map_err(io::Error::other)?;
-        let endpoint = match endpoint {
-            Ok(endpoint) => endpoint,
-            Err(endpoint) => str::from_utf8(&endpoint)
-                .map_err(io::Error::other)?
-                .to_string(),
-        };
-        let port = endpoint
-            .rsplit(':')
-            .next()
-            .ok_or_else(|| io::Error::other("invalid ipc endpoint"))?
-            .parse::<u16>()
-            .map_err(io::Error::other)?;
-
         let running = Arc::new(AtomicBool::new(true));
         let last_heartbeat = Arc::new(Mutex::new(Some(Instant::now())));
         let missed_heartbeats = Arc::new(AtomicU32::new(0));
         let runtime_handle = Handle::current();
+        let (startup_sender, startup_receiver) = mpsc::channel::<io::Result<u16>>();
 
         let heartbeat_thread = {
             let running = running.clone();
@@ -87,10 +72,41 @@ impl BackendIpcServer {
             let running = running.clone();
             let last_heartbeat = last_heartbeat.clone();
             let missed_heartbeats = missed_heartbeats.clone();
+            let startup_sender = startup_sender.clone();
             thread::Builder::new()
                 .name("png-ipc-server".to_string())
                 .spawn(move || {
-                    let _context = context;
+                    let startup_result = || -> io::Result<(zmq::Context, zmq::Socket, u16)> {
+                        let context = zmq::Context::new();
+                        let socket = context.socket(zmq::REP).map_err(io::Error::other)?;
+                        socket.bind("tcp://127.0.0.1:*").map_err(io::Error::other)?;
+                        let endpoint = socket.get_last_endpoint().map_err(io::Error::other)?;
+                        let endpoint = match endpoint {
+                            Ok(endpoint) => endpoint,
+                            Err(endpoint) => str::from_utf8(&endpoint)
+                                .map_err(io::Error::other)?
+                                .to_string(),
+                        };
+                        let port = endpoint
+                            .rsplit(':')
+                            .next()
+                            .ok_or_else(|| io::Error::other("invalid ipc endpoint"))?
+                            .parse::<u16>()
+                            .map_err(io::Error::other)?;
+
+                        Ok((context, socket, port))
+                    }();
+
+                    let (_context, socket, port) = match startup_result {
+                        Ok(values) => values,
+                        Err(error) => {
+                            let _ = startup_sender
+                                .send(Err(io::Error::new(error.kind(), error.to_string())));
+                            return;
+                        }
+                    };
+                    let _ = startup_sender.send(Ok(port));
+
                     while running.load(Ordering::Relaxed) {
                         let mut items = [socket.as_poll_item(zmq::POLLIN)];
                         if zmq::poll(&mut items, 100).is_err() {
@@ -134,6 +150,9 @@ impl BackendIpcServer {
                 })
                 .map_err(io::Error::other)?
         };
+        let port = startup_receiver
+            .recv()
+            .map_err(|_| io::Error::other("ipc server failed to report startup status"))??;
 
         Ok(Self {
             port,

@@ -2,10 +2,10 @@ use crate::errors::{InvalidPacketLengthError, PacketParsingError};
 use crate::{
     F1PacketType, PacketCarDamageData, PacketCarSetupData, PacketCarStatusData,
     PacketCarTelemetryData, PacketEventData, PacketFinalClassificationData, PacketHeader,
-    PacketHeaderError, PacketLapData, PacketLapPositionsData, PacketLobbyInfoData,
-    PacketMotionData, PacketMotionExData, PacketParticipantsData, PacketSessionData,
-    PacketSessionHistoryData, PacketTimeTrialData, PacketTyreSetsData, SessionDataError,
-    SessionHistoryError,
+    PacketHeaderError, PacketLapData, PacketLapPositionsData, PacketLapPositionsError,
+    PacketLobbyInfoData, PacketMotionData, PacketMotionExData, PacketParticipantsData,
+    PacketSessionData, PacketSessionHistoryData, PacketTimeTrialData, PacketTyreSetsData,
+    SessionDataError, SessionHistoryError,
 };
 use serde::Serialize;
 use std::fmt;
@@ -197,6 +197,7 @@ pub enum F1PacketParseError {
     PacketParsing(PacketParsingError),
     SessionData(SessionDataError),
     SessionHistory(SessionHistoryError),
+    LapPositions(PacketLapPositionsError),
 }
 
 impl fmt::Display for F1PacketParseError {
@@ -210,6 +211,7 @@ impl fmt::Display for F1PacketParseError {
             Self::PacketParsing(error) => write!(f, "{error}"),
             Self::SessionData(error) => write!(f, "{error}"),
             Self::SessionHistory(error) => write!(f, "{error}"),
+            Self::LapPositions(error) => write!(f, "{error}"),
         }
     }
 }
@@ -237,6 +239,12 @@ impl From<PacketParsingError> for F1PacketParseError {
 impl From<SessionDataError> for F1PacketParseError {
     fn from(value: SessionDataError) -> Self {
         Self::SessionData(value)
+    }
+}
+
+impl From<PacketLapPositionsError> for F1PacketParseError {
+    fn from(value: PacketLapPositionsError) -> Self {
+        Self::LapPositions(value)
     }
 }
 

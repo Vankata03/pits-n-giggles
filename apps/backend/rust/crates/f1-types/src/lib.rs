@@ -46,5 +46,5 @@ pub use packet_11_session_history_data::{
 pub use packet_12_tyre_sets_packet::{PacketTyreSetsData, TyreSetData};
 pub use packet_13_motion_ex_data::PacketMotionExData;
 pub use packet_14_time_trial_data::{PacketTimeTrialData, TimeTrialDataSet};
-pub use packet_15_lap_positions_data::PacketLapPositionsData;
+pub use packet_15_lap_positions_data::{PacketLapPositionsData, PacketLapPositionsError};
 pub use packet_dispatch::{F1Packet, F1PacketParseError};

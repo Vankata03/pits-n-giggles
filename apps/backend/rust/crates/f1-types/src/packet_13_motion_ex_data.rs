@@ -342,7 +342,7 @@ impl Serialize for PacketMotionExData {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(21))?;
+        let mut map = serializer.serialize_map(Some(22))?;
         map.serialize_entry("suspension-position", &self.suspension_position)?;
         map.serialize_entry("suspension-velocity", &self.suspension_velocity)?;
         map.serialize_entry("suspension-acceleration", &self.suspension_acceleration)?;

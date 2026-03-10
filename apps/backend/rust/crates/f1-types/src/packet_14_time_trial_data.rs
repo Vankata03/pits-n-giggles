@@ -72,7 +72,7 @@ impl TimeTrialDataSet {
     pub fn parse(data: &[u8], packet_format: u16) -> Result<Self, InvalidPacketLengthError> {
         if data.len() != Self::PACKET_LEN {
             return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} expected {}",
+                "Received packet length {} is not equal to expected {}",
                 data.len(),
                 Self::PACKET_LEN
             )));

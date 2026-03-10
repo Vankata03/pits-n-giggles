@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use tokio::net::UdpSocket;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 
 const FORWARDER_QUEUE_CAPACITY: usize = 256;
@@ -15,9 +16,12 @@ impl PacketForwarderWorker {
         if targets.is_empty() {
             return Self { sender: None };
         }
+        let Ok(runtime_handle) = Handle::try_current() else {
+            return Self { sender: None };
+        };
 
         let (sender, mut receiver) = mpsc::channel::<Vec<u8>>(FORWARDER_QUEUE_CAPACITY);
-        tokio::spawn(async move {
+        runtime_handle.spawn(async move {
             let Ok(socket) = UdpSocket::bind("0.0.0.0:0").await else {
                 return;
             };
