@@ -29,7 +29,7 @@ import json
 import webbrowser
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 from PySide6.QtWidgets import QPushButton
 
@@ -273,7 +273,7 @@ class BackendAppMgr(PngAppMgrBase):
             # If no exception, it will be handled in post_start/post_stop
             self.set_button_state(self.start_stop_button, True)
 
-    def _resolve_rust_backend_command(self) -> List[str] | None:
+    def _resolve_rust_backend_command(self) -> Optional[List[str]]:
         if env_bin := os.environ.get("PNG_RUST_BACKEND_BIN"):
             if os.path.isfile(env_bin):
                 return [env_bin]

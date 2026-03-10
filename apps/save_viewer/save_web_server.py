@@ -27,6 +27,7 @@ import json
 import logging
 import mimetypes
 import platform
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,14 +45,40 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FRONTEND_DIR = _REPO_ROOT / "apps" / "frontend"
 _TEMPLATE_PATH = _FRONTEND_DIR / "html" / "driver-view.html"
 _ASSETS_DIR = _REPO_ROOT / "assets"
+
+
+@dataclass(frozen=True)
+class _StaticRoute:
+    file_path: Path
+    mime_type: str
+
+
 _STATIC_ROUTE_MAP = {
-    "/favicon.ico": (_ASSETS_DIR / "favicon.ico", "image/vnd.microsoft.icon"),
-    "/tyre-icons/soft.svg": (_ASSETS_DIR / "tyre-icons" / "soft_tyre.svg", "image/svg+xml"),
-    "/tyre-icons/super-soft.svg": (_ASSETS_DIR / "tyre-icons" / "super_soft_tyre.svg", "image/svg+xml"),
-    "/tyre-icons/medium.svg": (_ASSETS_DIR / "tyre-icons" / "medium_tyre.svg", "image/svg+xml"),
-    "/tyre-icons/hard.svg": (_ASSETS_DIR / "tyre-icons" / "hard_tyre.svg", "image/svg+xml"),
-    "/tyre-icons/intermediate.svg": (_ASSETS_DIR / "tyre-icons" / "intermediate_tyre.svg", "image/svg+xml"),
-    "/tyre-icons/wet.svg": (_ASSETS_DIR / "tyre-icons" / "wet_tyre.svg", "image/svg+xml"),
+    "/favicon.ico": _StaticRoute(_ASSETS_DIR / "favicon.ico", "image/vnd.microsoft.icon"),
+    "/tyre-icons/soft.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "soft_tyre.svg",
+        "image/svg+xml",
+    ),
+    "/tyre-icons/super-soft.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "super_soft_tyre.svg",
+        "image/svg+xml",
+    ),
+    "/tyre-icons/medium.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "medium_tyre.svg",
+        "image/svg+xml",
+    ),
+    "/tyre-icons/hard.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "hard_tyre.svg",
+        "image/svg+xml",
+    ),
+    "/tyre-icons/intermediate.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "intermediate_tyre.svg",
+        "image/svg+xml",
+    ),
+    "/tyre-icons/wet.svg": _StaticRoute(
+        _ASSETS_DIR / "tyre-icons" / "wet_tyre.svg",
+        "image/svg+xml",
+    ),
 }
 
 # -------------------------------------- CLASSES -----------------------------------------------------------------------
@@ -68,8 +95,8 @@ class _SaveViewerRequestHandler(BaseHTTPRequestHandler):
     def png_server(self) -> "SaveViewerWebServer":
         return self.server.png_server
 
-    def log_message(self, format: str, *args) -> None:
-        self.png_server.m_logger.debug("Save viewer HTTP: " + format, *args)
+    def log_message(self, message_format: str, *args) -> None:
+        self.png_server.m_logger.debug("Save viewer HTTP: " + message_format, *args)
 
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
@@ -92,8 +119,8 @@ class _SaveViewerRequestHandler(BaseHTTPRequestHandler):
             self._serve_static_file(path[len("/static/"):])
             return
         if path in _STATIC_ROUTE_MAP:
-            file_path, mime_type = _STATIC_ROUTE_MAP[path]
-            self._serve_file(file_path, mime_type)
+            static_route = _STATIC_ROUTE_MAP[path]
+            self._serve_file(static_route.file_path, static_route.mime_type)
             return
 
         self._send_json(
