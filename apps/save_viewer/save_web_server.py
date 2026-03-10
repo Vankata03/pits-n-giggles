@@ -95,8 +95,9 @@ class _SaveViewerRequestHandler(BaseHTTPRequestHandler):
     def png_server(self) -> "SaveViewerWebServer":
         return self.server.png_server
 
-    def log_message(self, message_format: str, *args) -> None:
-        self.png_server.m_logger.debug("Save viewer HTTP: " + message_format, *args)
+    # Match BaseHTTPRequestHandler.log_message exactly; pylint checks override names too.
+    def log_message(self, format: str, *args) -> None:  # pylint: disable=redefined-builtin
+        self.png_server.m_logger.debug("Save viewer HTTP: " + format, *args)
 
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
