@@ -163,7 +163,7 @@ impl LiveryColour {
     pub fn parse(data: &[u8]) -> Result<Self, InvalidPacketLengthError> {
         if data.len() != Self::PACKET_LEN {
             return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} expected {}",
+                "Received packet length {} is not equal to expected {}",
                 data.len(),
                 Self::PACKET_LEN
             )));
@@ -267,7 +267,7 @@ impl ParticipantData {
         let expected_len = Self::packet_len_for_format(packet_format);
         if data.len() != expected_len {
             return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} expected {}",
+                "Received packet length {} is not equal to expected {}",
                 data.len(),
                 expected_len
             )));

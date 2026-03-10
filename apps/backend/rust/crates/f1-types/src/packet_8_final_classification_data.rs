@@ -102,7 +102,7 @@ impl FinalClassificationData {
         let expected_len = Self::packet_len_for_format(packet_format);
         if data.len() != expected_len {
             return Err(InvalidPacketLengthError::new(format!(
-                "Received packet length {} expected {}",
+                "Received packet length {} is not equal to expected {}",
                 data.len(),
                 expected_len
             )));
