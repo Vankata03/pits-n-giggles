@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/backend", "crates/f1-types", "crates/state", "crates/telemetry-core"]
+members = ["crates/backend", "crates/f1-types", "crates/hud-renderer", "crates/state", "crates/telemetry-core"]
 resolver = "2"
 
 [workspace.package]

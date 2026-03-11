@@ -94,6 +94,12 @@ After that, the next best candidate is **`TrackRadarOverlay`**, because it also 
 2. **Add a separate Rust HUD prototype**
    - start with only the input telemetry overlay
    - feed it the same live telemetry data the Python HUD already uses
+   - this repo now includes a small scaffold crate at `apps/backend/rust/crates/hud-renderer/`
+   - the first example intentionally stops at data fetch + parse so the data path can be validated before any renderer work starts
+
+   ```bash
+   cargo run --manifest-path apps/backend/rust/Cargo.toml -p hud-renderer --example basic_input_telemetry
+   ```
 
 3. **Compare frame pacing**
    - check update smoothness and CPU/GPU usage against the current PySide6/QML overlay
