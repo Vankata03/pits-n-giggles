@@ -3,6 +3,9 @@ use std::fmt;
 
 use serde_json::Value;
 
+const MAX_PERCENTAGE: f32 = 100.0;
+const STEERING_RANGE: f32 = 100.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputTelemetrySnapshot {
     pub throttle: f32,
@@ -12,6 +15,15 @@ pub struct InputTelemetrySnapshot {
 }
 
 impl InputTelemetrySnapshot {
+    pub fn sample() -> Self {
+        Self {
+            throttle: 73.5,
+            brake: 14.0,
+            steering: -11.25,
+            rev_lights_percentage: 91,
+        }
+    }
+
     pub fn from_stream_overlay_value(value: &Value) -> Result<Self, TelemetryParseError> {
         let telemetry = value
             .get("car-telemetry")
@@ -30,6 +42,28 @@ impl InputTelemetrySnapshot {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct HudDisplayMetrics {
+    pub throttle_fill: f32,
+    pub brake_fill: f32,
+    pub steering_fill: f32,
+    pub steering_percentage: f32,
+    pub rev_lights_fill: f32,
+}
+
+impl HudDisplayMetrics {
+    pub fn from_snapshot(snapshot: &InputTelemetrySnapshot) -> Self {
+        let clamped_steering = snapshot.steering.clamp(-STEERING_RANGE, STEERING_RANGE);
+        Self {
+            throttle_fill: normalize_percentage(snapshot.throttle),
+            brake_fill: normalize_percentage(snapshot.brake),
+            steering_fill: (clamped_steering + STEERING_RANGE) / (STEERING_RANGE * 2.0),
+            steering_percentage: clamped_steering,
+            rev_lights_fill: normalize_percentage(snapshot.rev_lights_percentage as f32),
+        }
+    }
+}
+
 pub fn fetch_input_telemetry(
     base_url: &str,
 ) -> Result<InputTelemetrySnapshot, FetchTelemetryError> {
@@ -43,6 +77,10 @@ pub fn fetch_input_telemetry(
         .json::<Value>()
         .map_err(FetchTelemetryError::Http)?;
     InputTelemetrySnapshot::from_stream_overlay_value(&value).map_err(FetchTelemetryError::Parse)
+}
+
+fn normalize_percentage(value: f32) -> f32 {
+    (value / MAX_PERCENTAGE).clamp(0.0, 1.0)
 }
 
 fn telemetry_f32(
@@ -118,7 +156,7 @@ impl Error for FetchTelemetryError {
 mod tests {
     use serde_json::json;
 
-    use super::{InputTelemetrySnapshot, TelemetryParseError};
+    use super::{HudDisplayMetrics, InputTelemetrySnapshot, TelemetryParseError};
 
     #[test]
     fn parses_backend_stream_overlay_shape() {
@@ -171,5 +209,21 @@ mod tests {
             .expect_err("missing telemetry block");
 
         assert_eq!(error, TelemetryParseError::MissingField("car-telemetry"));
+    }
+
+    #[test]
+    fn hud_display_metrics_clamp_expected_ranges() {
+        let metrics = HudDisplayMetrics::from_snapshot(&InputTelemetrySnapshot {
+            throttle: 135.0,
+            brake: -20.0,
+            steering: -150.0,
+            rev_lights_percentage: 255,
+        });
+
+        assert_eq!(metrics.throttle_fill, 1.0);
+        assert_eq!(metrics.brake_fill, 0.0);
+        assert_eq!(metrics.steering_fill, 0.0);
+        assert_eq!(metrics.steering_percentage, -100.0);
+        assert_eq!(metrics.rev_lights_fill, 1.0);
     }
 }

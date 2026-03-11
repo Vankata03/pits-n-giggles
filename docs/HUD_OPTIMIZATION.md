@@ -101,6 +101,12 @@ After that, the next best candidate is **`TrackRadarOverlay`**, because it also 
    cargo run --manifest-path apps/backend/rust/Cargo.toml -p hud-renderer --example basic_input_telemetry
    ```
 
+   To bring up a visible standalone prototype window without changing the launcher:
+
+   ```bash
+   cargo run --manifest-path apps/backend/rust/Cargo.toml -p hud-renderer -- --sample
+   ```
+
 3. **Compare frame pacing**
    - check update smoothness and CPU/GPU usage against the current PySide6/QML overlay
 
