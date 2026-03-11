@@ -13,9 +13,9 @@ use eframe::egui::{
 use hud_renderer::{InputTelemetrySnapshot, fetch_input_telemetry};
 
 const DEFAULT_BACKEND_URL: &str = "http://127.0.0.1:4768";
-const TARGET_CANVAS_SIZE: Vec2 = Vec2::new(450.0, 120.0);
-const MIN_WINDOW_SIZE: Vec2 = Vec2::new(320.0, 140.0);
 const DEFAULT_WINDOW_SIZE: Vec2 = Vec2::new(480.0, 160.0);
+const TARGET_CANVAS_SIZE: Vec2 = DEFAULT_WINDOW_SIZE;
+const MIN_WINDOW_SIZE: Vec2 = Vec2::new(160.0, 56.0);
 const MAX_HISTORY_LENGTH: usize = 175;
 const SMOOTHING_FACTOR: f32 = 0.2;
 const DEFAULT_RENDER_INTERVAL_MS: u64 = 16;
@@ -38,14 +38,22 @@ fn main() -> Result<(), eframe::Error> {
         config.title.clone()
     };
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(config.initial_window_size)
+        .with_min_inner_size(MIN_WINDOW_SIZE)
+        .with_decorations(false)
+        .with_transparent(true)
+        .with_always_on_top()
+        .with_taskbar(false)
+        .with_icon(egui::IconData::default())
+        .with_title(title.clone());
+
+    if let Some(position) = config.initial_position {
+        viewport = viewport.with_position(position);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(DEFAULT_WINDOW_SIZE)
-            .with_min_inner_size(MIN_WINDOW_SIZE)
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_always_on_top()
-            .with_title(title.clone()),
+        viewport,
         ..Default::default()
     };
 
@@ -64,7 +72,8 @@ struct AppConfig {
     history_length: usize,
     render_interval: Duration,
     fetch_interval: Duration,
-    movable: bool,
+    initial_position: Option<egui::Pos2>,
+    initial_window_size: Vec2,
 }
 
 impl AppConfig {
@@ -75,7 +84,10 @@ impl AppConfig {
         let mut history_length = None;
         let mut render_interval_ms = None;
         let mut fetch_interval_ms = None;
-        let mut movable = false;
+        let mut initial_x = None;
+        let mut initial_y = None;
+        let mut initial_width = None;
+        let mut initial_height = None;
         let base_url = std::env::var("PNG_BACKEND_URL")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -85,7 +97,6 @@ impl AppConfig {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--sample" => sample_mode = true,
-                "--movable" => movable = true,
                 "--title" => {
                     if let Some(value) = args.next() {
                         title = Some(value);
@@ -104,6 +115,26 @@ impl AppConfig {
                 "--fetch-interval-ms" => {
                     if let Some(value) = args.next() {
                         fetch_interval_ms = value.parse::<u64>().ok().filter(|value| *value > 0);
+                    }
+                }
+                "--x" => {
+                    if let Some(value) = args.next() {
+                        initial_x = value.parse::<f32>().ok();
+                    }
+                }
+                "--y" => {
+                    if let Some(value) = args.next() {
+                        initial_y = value.parse::<f32>().ok();
+                    }
+                }
+                "--width" => {
+                    if let Some(value) = args.next() {
+                        initial_width = value.parse::<f32>().ok().filter(|value| *value > 0.0);
+                    }
+                }
+                "--height" => {
+                    if let Some(value) = args.next() {
+                        initial_height = value.parse::<f32>().ok().filter(|value| *value > 0.0);
                     }
                 }
                 _ if arg.starts_with("--") => {}
@@ -126,7 +157,11 @@ impl AppConfig {
             fetch_interval: Duration::from_millis(
                 fetch_interval_ms.unwrap_or(DEFAULT_FETCH_INTERVAL_MS),
             ),
-            movable,
+            initial_position: initial_x.zip(initial_y).map(|(x, y)| pos2(x, y)),
+            initial_window_size: vec2(
+                initial_width.unwrap_or(DEFAULT_WINDOW_SIZE.x),
+                initial_height.unwrap_or(DEFAULT_WINDOW_SIZE.y),
+            ),
         }
     }
 }
@@ -301,24 +336,21 @@ impl eframe::App for HudApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(Color32::from_black_alpha(0)))
             .show(ctx, |ui| {
-                let available = ui.available_size();
-                let scale = (available.x / TARGET_CANVAS_SIZE.x)
-                    .min(available.y / TARGET_CANVAS_SIZE.y)
-                    .clamp(0.7, 3.0);
-                let size = TARGET_CANVAS_SIZE * scale;
-
-                ui.vertical_centered(|ui| {
-                    ui.add_space((available.y - size.y).max(0.0) * 0.5);
-                    let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-                    if self.config.movable && response.drag_started() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                    }
-                    paint_overlay(ui.painter(), rect, &self.history, &self.display);
-                });
+                let rect = ui.max_rect();
+                let response = ui.allocate_rect(rect, Sense::click_and_drag());
+                if response.drag_started() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
+                paint_overlay(ui.painter(), rect, &self.history, &self.display);
 
                 if let Some(error) = &self.last_error {
-                    ui.add_space(6.0);
-                    ui.colored_label(Color32::from_rgb(255, 120, 120), error);
+                    ui.painter().text(
+                        rect.left_top() + vec2(10.0, 10.0),
+                        Align2::LEFT_TOP,
+                        error,
+                        FontId::proportional(11.0),
+                        Color32::from_rgb(255, 120, 120),
+                    );
                 }
             });
     }
@@ -400,9 +432,11 @@ fn paint_overlay(
     history: &TelemetryHistory,
     display: &SmoothedTelemetry,
 ) {
-    let scale = rect.width() / TARGET_CANVAS_SIZE.x;
-    let outer_margin = 6.0 * scale;
-    let inner_margin = 8.0 * scale;
+    let scale = (rect.width() / TARGET_CANVAS_SIZE.x)
+        .min(rect.height() / TARGET_CANVAS_SIZE.y)
+        .clamp(0.35, 4.0);
+    let outer_margin = 0.0;
+    let inner_margin = 6.0 * scale;
     let panel_rounding = Rounding::same(6.0 * scale);
     let bars_width = 60.0 * scale;
     let gap = 10.0 * scale;

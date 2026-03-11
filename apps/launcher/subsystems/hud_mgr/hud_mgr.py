@@ -348,6 +348,25 @@ class HudAppMgr(PngAppMgrBase):
             # Re-enable buttons on error
             self._update_all_button_states(running=True)
 
+    def stop(self, reason: str):
+        """Persist the current HUD layout before stopping."""
+        if self.is_running and not self.locked:
+            try:
+                success, rsp = self._request_lock_state_change(
+                    old_value=self.locked,
+                    new_value=True,
+                )
+                if success:
+                    self.locked = True
+                    self._save_layout_if_changed(rsp)
+                else:
+                    self.error_log("Failed to capture HUD layout before stopping.")
+            except Exception as e:  # pylint: disable=broad-except
+                self.error_log(f"Failed to persist HUD layout before stop: {e}")
+
+        self.overlays_adj_popup.hide()
+        super().stop(reason)
+
     def process_enabled_change(self):
         """
         Process the enabled state change and update the GUI accordingly.

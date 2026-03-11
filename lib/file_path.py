@@ -22,6 +22,7 @@
 
 # -------------------------------------- IMPORTS -----------------------------------------------------------------------
 
+import os
 import sys
 from pathlib import Path
 
@@ -42,8 +43,12 @@ def resolve_user_file(filename: str) -> str:
     Returns:
         str: Full path to the resolved file location.
     """
-    if sys.platform != "darwin":
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        base_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME_SNAKE
+    elif sys.platform == "darwin":
+        base_dir = Path.home() / "Library" / "Application Support" / APP_NAME_SNAKE
+    else:
         return filename
-    base_dir = Path.home() / "Library" / "Application Support" / APP_NAME_SNAKE
+
     base_dir.mkdir(parents=True, exist_ok=True)
     return str(base_dir / filename)

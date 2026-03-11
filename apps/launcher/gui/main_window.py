@@ -32,7 +32,7 @@ from typing import Any, Callable, Dict, List, Optional
 from PySide6.QtCore import (QEvent, QMetaObject, QObject, QSize, Qt,
                             QThreadPool, QTimer, Signal)
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGridLayout,
+from PySide6.QtWidgets import (QApplication, QFileDialog, QGridLayout,
                                QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QToolTip, QVBoxLayout,
                                QWidget)
@@ -55,21 +55,6 @@ from .subsys_row import SubsystemCard
 from .tasks import SettingsChangeTask, StopSubsystemTask, UpdateCheckTask
 
 # -------------------------------------- CLASSES -----------------------------------------------------------------------
-
-class ShutdownDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Please wait")
-        self.setModal(True)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint)
-
-        layout = QVBoxLayout(self)
-        label = QLabel("Shutting down ...")
-        label.setFont(QFont("Formula1"))
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-
-        self.setFixedSize(220, 80)
 
 class StableTooltipController(QObject):
     """
@@ -674,9 +659,6 @@ class PngLauncherWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):
         self.info_log("Shutting down launcher...")
-
-        self.shutdown_dialog = ShutdownDialog(self)
-        self.shutdown_dialog.show()
         self.process_events()
 
         for subsystem in self.subsystems:

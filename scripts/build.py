@@ -22,20 +22,37 @@
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-import subprocess
-import sys
 import os
 import shutil
+import subprocess
+import sys
 import time
+import ast
 
 APP_NAME = "pits_n_giggles"  # or load from the spec file dynamically if needed
 COLLECT_DIR_NAME = f"{APP_NAME}_build_tmp"
+STAGING_DIST_DIR_NAME = f"{APP_NAME}_dist_tmp"
 
 def remove_dir_if_exists(path: str):
     if os.path.isdir(path):
         shutil.rmtree(path)
 
-def build_rust_backend() -> str:
+def replace_dir_if_possible(src: str, dest: str):
+    if os.path.abspath(src) == os.path.abspath(dest):
+        return
+
+    if os.path.isdir(dest):
+        try:
+            shutil.rmtree(dest)
+        except PermissionError:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup = f"{dest}_locked_{timestamp}"
+            os.replace(dest, backup)
+            print(f"Existing dist directory was in use; moved it to: {backup}")
+
+    os.replace(src, dest)
+
+def build_rust_binary(package_name: str) -> str:
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     manifest_path = os.path.join(project_root, "apps", "backend", "rust", "Cargo.toml")
     cargo = shutil.which("cargo")
@@ -50,15 +67,15 @@ def build_rust_backend() -> str:
             "--manifest-path",
             manifest_path,
             "-p",
-            "backend",
+            package_name,
         ],
         check=True,
     )
 
-    binary_name = "backend.exe" if os.name == "nt" else "backend"
+    binary_name = f"{package_name}.exe" if os.name == "nt" else package_name
     binary_path = os.path.join(project_root, "apps", "backend", "rust", "target", "release", binary_name)
     if not os.path.isfile(binary_path):
-        raise RuntimeError(f"Rust backend binary not found after build: {binary_path}")
+        raise RuntimeError(f"Rust {package_name} binary not found after build: {binary_path}")
     return binary_path
 
 def resolve_pyinstaller_command() -> list[str]:
@@ -67,52 +84,72 @@ def resolve_pyinstaller_command() -> list[str]:
         return [pyinstaller]
     return [sys.executable, "-m", "PyInstaller"]
 
-def verify_rust_backend_packaged(project_root: str, rust_backend_binary: str):
+def verify_rust_binary_packaged(project_root: str, rust_binary: str):
     toc_path = os.path.join(project_root, "build", "png", "PKG-00.toc")
     if not os.path.isfile(toc_path):
         raise RuntimeError(f"Expected PyInstaller TOC not found: {toc_path}")
 
     with open(toc_path, "r", encoding="utf-8") as f:
-        toc_contents = f.read()
+        toc_contents = ast.literal_eval(f.read())
 
-    binary_name = os.path.basename(rust_backend_binary)
-    if binary_name not in toc_contents or rust_backend_binary not in toc_contents:
+    binary_name = os.path.basename(rust_binary)
+    expected_path = os.path.normcase(os.path.normpath(rust_binary))
+    packaged_entries = toc_contents[2] if isinstance(toc_contents, tuple) and len(toc_contents) >= 3 else []
+
+    packaged = any(
+        isinstance(entry, tuple)
+        and len(entry) >= 3
+        and entry[0] == binary_name
+        and os.path.normcase(os.path.normpath(entry[1])) == expected_path
+        and entry[2] == "BINARY"
+        for entry in packaged_entries
+    )
+
+    if not packaged:
         raise RuntimeError(
-            "Rust backend binary was built, but PyInstaller did not package it into PKG-00.toc"
+            f"Rust binary was built, but PyInstaller did not package it into PKG-00.toc: {rust_binary}"
         )
 
 def main():
     script_dir = os.path.dirname(__file__)
     project_root = os.path.abspath(os.path.join(script_dir, ".."))
     spec_path = os.path.join(script_dir, "png.spec")
-    collect_dir = os.path.join("dist", COLLECT_DIR_NAME)
+    dist_dir = os.path.join(project_root, "dist")
+    staging_dist_dir = os.path.join(project_root, STAGING_DIST_DIR_NAME)
+    collect_dir = os.path.join(staging_dist_dir, COLLECT_DIR_NAME)
 
     # 0. Cleanup previous files
-    remove_dir_if_exists("build")
-    remove_dir_if_exists("dist")
+    remove_dir_if_exists(os.path.join(project_root, "build"))
+    remove_dir_if_exists(staging_dist_dir)
 
     # 1. Build the Rust backend companion binary
-    rust_backend_binary = build_rust_backend()
+    rust_backend_binary = build_rust_binary("backend")
+    rust_hud_renderer_binary = build_rust_binary("hud-renderer")
 
     # 2. Run PyInstaller
     start_time = time.time()
     env = os.environ.copy()
     env["PNG_RUST_BACKEND_BIN"] = rust_backend_binary
+    env["PNG_HUD_RENDERER_BIN"] = rust_hud_renderer_binary
     env["PNG_PROJECT_ROOT"] = project_root
     subprocess.run(
         [
             *resolve_pyinstaller_command(),
             "--clean",
             "--noconfirm",
+            "--distpath",
+            staging_dist_dir,
             spec_path,
         ],
         check=True,
         env=env,
     )
-    verify_rust_backend_packaged(project_root, rust_backend_binary)
+    verify_rust_binary_packaged(project_root, rust_backend_binary)
+    verify_rust_binary_packaged(project_root, rust_hud_renderer_binary)
 
     # 3. Cleanup the custom COLLECT dir
     remove_dir_if_exists(collect_dir)
+    replace_dir_if_possible(staging_dist_dir, dist_dir)
 
     end_time = time.time()
     elapsed = end_time - start_time

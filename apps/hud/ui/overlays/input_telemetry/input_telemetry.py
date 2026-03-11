@@ -23,7 +23,9 @@
 import ctypes
 import logging
 import os
+import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -64,6 +66,7 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
     WS_EX_LAYERED = 0x00080000
     WS_EX_TRANSPARENT = 0x00000020
     LWA_ALPHA = 0x00000002
+    RUST_BINARY_NAMES = ("hud-renderer.exe", "hud-renderer")
 
     def __init__(
         self,
@@ -84,7 +87,8 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
         self._render_interval_ms = render_interval_ms
         self._fetch_interval_ms = fetch_interval_ms
         self._window_duration_sec = window_duration_sec
-        self._title = f"png-rust-input-telemetry-{os.getpid()}"
+        self._launch_generation = 0
+        self._title = self._build_window_title()
         self._process: Optional[subprocess.Popen] = None
         self._hwnd: Optional[int] = None
         self._output_thread: Optional[threading.Thread] = None
@@ -123,8 +127,6 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
 
     @final
     def apply_config(self):
-        self.set_ui_scale(self.scale_factor)
-        self.set_window_position(self.config)
         self.set_opacity(self.opacity)
         self.set_visibility(self._visible)
 
@@ -189,19 +191,13 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
 
     @final
     def set_ui_scale(self, ui_scale: float):
-        hwnd = self._require_hwnd()
+        try:
+            self.config = self.get_window_info()
+        except Exception:  # pylint: disable=broad-except
+            pass
+
         self.scale_factor = ui_scale
-        width = max(1, round(self.BASE_WINDOW_WIDTH * ui_scale))
-        height = max(1, round(self.BASE_WINDOW_HEIGHT * ui_scale))
-        self._user32.SetWindowPos(
-            hwnd,
-            self.HWND_TOPMOST,
-            0,
-            0,
-            width,
-            height,
-            self.SWP_NOMOVE | self.SWP_NOACTIVATE | self.SWP_SHOWWINDOW,
-        )
+        self._restart_native_overlay()
 
     @final
     def get_visibility(self) -> bool:
@@ -214,13 +210,15 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
         if self.locked == locked:
             return
 
-        try:
-            self.config = self.get_window_info()
-        except Exception:  # pylint: disable=broad-except
-            pass
-
         self.locked = locked
-        self._restart_native_overlay()
+        self.update_window_flags()
+
+        if self.locked and not self.telemetry_active:
+            self.logger.debug(
+                "%s locking overlay. But hiding it since telemetry is not active",
+                self.OVERLAY_ID,
+            )
+            self.set_visibility(False)
 
     def shutdown(self):
         if not self._process:
@@ -242,6 +240,8 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
             self._hwnd = None
 
     def _launch_native_overlay(self) -> None:
+        self._launch_generation += 1
+        self._title = self._build_window_title()
         command, workdir = self._build_launch_command()
         self.logger.info(
             "%s | Launching Rust input telemetry overlay: %s",
@@ -265,10 +265,6 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
         self._output_thread.start()
 
     def _build_launch_command(self) -> tuple[list[str], Path]:
-        repo_root = Path(__file__).resolve().parents[5]
-        rust_workspace = repo_root / "apps" / "backend" / "rust"
-        binary = rust_workspace / "target" / "debug" / "hud-renderer.exe"
-
         history_length = max(
             1,
             round((self._window_duration_sec * 1000.0) / self._fetch_interval_ms),
@@ -283,16 +279,88 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
             str(self._render_interval_ms),
             "--fetch-interval-ms",
             str(self._fetch_interval_ms),
+            "--x",
+            str(self.config.x),
+            "--y",
+            str(self.config.y),
+            "--width",
+            str(self._scaled_window_width),
+            "--height",
+            str(self._scaled_window_height),
         ]
-        if not self.locked:
-            overlay_args.append("--movable")
         if self._backend_url:
             overlay_args.append(self._backend_url)
 
-        if binary.is_file():
-            return [str(binary), *overlay_args], rust_workspace
+        if env_bin := os.environ.get("PNG_HUD_RENDERER_BIN"):
+            env_path = Path(env_bin)
+            if env_path.is_file():
+                return [str(env_path), *overlay_args], env_path.parent
 
-        return ["cargo", "run", "-p", "hud-renderer", "--", *overlay_args], rust_workspace
+        if getattr(sys, "frozen", False):
+            search_dirs = []
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                search_dirs.append(Path(meipass))
+            search_dirs.append(Path(sys.executable).resolve().parent)
+
+            for search_dir in search_dirs:
+                for candidate_name in self.RUST_BINARY_NAMES:
+                    candidate = search_dir / candidate_name
+                    if candidate.is_file():
+                        return [str(candidate), *overlay_args], candidate.parent
+
+            raise RuntimeError("Packaged Rust HUD renderer binary was not found")
+
+        repo_root = self._find_repo_root()
+        rust_workspace = repo_root / "apps" / "backend" / "rust"
+        debug_binary = rust_workspace / "target" / "debug" / "hud-renderer.exe"
+        release_binary = rust_workspace / "target" / "release" / "hud-renderer.exe"
+
+        cargo = shutil.which("cargo")
+        manifest_path = rust_workspace / "Cargo.toml"
+        latest_source_mtime = self._latest_renderer_source_mtime(rust_workspace)
+
+        for binary in (debug_binary, release_binary):
+            if binary.is_file() and binary.stat().st_mtime >= latest_source_mtime:
+                return [str(binary), *overlay_args], binary.parent
+
+        if cargo and manifest_path.is_file():
+            return [
+                cargo,
+                "run",
+                "--manifest-path",
+                str(manifest_path),
+                "-p",
+                "hud-renderer",
+                "--",
+                *overlay_args,
+            ], rust_workspace
+
+        raise RuntimeError("Rust HUD renderer launch command was not found")
+
+    def _build_window_title(self) -> str:
+        return f"png-rust-input-telemetry-{os.getpid()}-{self._launch_generation}"
+
+    def _find_repo_root(self) -> Path:
+        current = Path(__file__).resolve()
+        for parent in current.parents:
+            if (parent / "apps" / "backend" / "rust" / "Cargo.toml").is_file():
+                return parent
+        raise RuntimeError("Could not locate repository root for Rust HUD renderer")
+
+    def _latest_renderer_source_mtime(self, rust_workspace: Path) -> float:
+        renderer_dir = rust_workspace / "crates" / "hud-renderer"
+        candidate_paths = [rust_workspace / "Cargo.toml", renderer_dir / "Cargo.toml"]
+        candidate_paths.extend(renderer_dir.glob("src/*.rs"))
+        return max(path.stat().st_mtime for path in candidate_paths if path.is_file())
+
+    @property
+    def _scaled_window_width(self) -> int:
+        return max(1, round(self.BASE_WINDOW_WIDTH * self.scale_factor))
+
+    @property
+    def _scaled_window_height(self) -> int:
+        return max(1, round(self.BASE_WINDOW_HEIGHT * self.scale_factor))
 
     def _drain_output(self):
         assert self._process and self._process.stdout
@@ -335,6 +403,6 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
         self.shutdown()
         self._launch_native_overlay()
         self._wait_for_window()
-        self.apply_config()
+        self.set_opacity(self.opacity)
         self.update_window_flags()
         self.set_visibility(was_visible)

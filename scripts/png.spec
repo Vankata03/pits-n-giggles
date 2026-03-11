@@ -87,16 +87,16 @@ def collect_directory(src_dir, dest_dir):
 
     return items
 
-def collect_rust_backend_binary():
-    rust_backend_bin = os.environ.get("PNG_RUST_BACKEND_BIN")
-    if not rust_backend_bin:
-        print("Warning: PNG_RUST_BACKEND_BIN not set, packaged build will not include Rust backend companion binary")
+def collect_rust_binary(env_var_name, display_name):
+    rust_binary = os.environ.get(env_var_name)
+    if not rust_binary:
+        print(f"Warning: {env_var_name} not set, packaged build will not include the Rust {display_name} binary")
         return []
 
-    if not os.path.isfile(rust_backend_bin):
-        raise FileNotFoundError(f"Rust backend binary not found: {rust_backend_bin}")
+    if not os.path.isfile(rust_binary):
+        raise FileNotFoundError(f"Rust {display_name} binary not found: {rust_binary}")
 
-    return [(rust_backend_bin, ".")]
+    return [(rust_binary, ".")]
 
 # --------------------------------------------------------------------------------------------------
 # Modules and Assets
@@ -109,7 +109,10 @@ hiddenimports = (
     collect_submodules("apps.broker")
 )
 
-rust_binaries = collect_rust_backend_binary()
+rust_binaries = (
+    collect_rust_binary("PNG_RUST_BACKEND_BIN", "backend") +
+    collect_rust_binary("PNG_HUD_RENDERER_BIN", "HUD renderer")
+)
 
 # Automatically collect all assets and frontend files
 datas = []
