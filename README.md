@@ -92,6 +92,7 @@ See **[RUNNING.md](docs/RUNNING.md)**.
 ### Manual / Source Installation
 - How to run → **[RUNNING.md](docs/RUNNING.md)**
 - How to build → **[BUILDING.md](docs/BUILDING.md)**
+- HUD optimization notes → **[HUD_OPTIMIZATION.md](docs/HUD_OPTIMIZATION.md)**
 
 ---
 
