@@ -248,7 +248,7 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
             self.OVERLAY_ID,
             " ".join(command),
         )
-        self._process = subprocess.Popen(
+        self._process = subprocess.Popen(  # pylint: disable=consider-using-with
             command,
             cwd=workdir,
             stdout=subprocess.PIPE,
@@ -296,10 +296,11 @@ class InputTelemetryOverlay(BaseOverlay, QObject):
 
     def _drain_output(self):
         assert self._process and self._process.stdout
-        for raw_line in self._process.stdout:
-            line = raw_line.rstrip()
-            if line:
-                self.logger.debug("%s | rust: %s", self.OVERLAY_ID, line)
+        with self._process.stdout as stdout:
+            for raw_line in stdout:
+                line = raw_line.rstrip()
+                if line:
+                    self.logger.debug("%s | rust: %s", self.OVERLAY_ID, line)
 
     def _wait_for_window(self):
         assert self._process is not None
