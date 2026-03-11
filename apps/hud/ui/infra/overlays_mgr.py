@@ -106,8 +106,10 @@ class OverlaysMgr:
             overlay_cfg=settings.HUD.layout[InputTelemetryOverlay.OVERLAY_ID],
             windowed_overlay=settings.HUD.use_windowed_overlays,
             scale_factor=settings.HUD.input_overlay_ui_scale,
-            refresh_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
-            window_duration_sec=settings.HUD.input_overlay_buffer_duration_sec
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=1000 // settings.Display.telemetry_rate,
+            window_duration_sec=settings.HUD.input_overlay_buffer_duration_sec,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
 
@@ -162,6 +164,13 @@ class OverlaysMgr:
         """Stop the overlays manager"""
         self.running = False
         self.wdt.stop()
+        for overlay in self.window_manager.overlays.values():
+            shutdown = getattr(overlay, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown()
+                except Exception as e:  # pylint: disable=broad-except
+                    self.logger.exception("Failed to stop overlay cleanly: %s", e)
         QMetaObject.invokeMethod(
             self.app,
             "quit",

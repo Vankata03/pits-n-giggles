@@ -1,10 +1,14 @@
 use std::error::Error;
 use std::fmt;
+use std::sync::OnceLock;
+use std::time::Duration;
 
+use reqwest::blocking::Client;
 use serde_json::Value;
 
 const MAX_PERCENTAGE: f32 = 100.0;
 const STEERING_RANGE: f32 = 100.0;
+const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputTelemetrySnapshot {
@@ -28,7 +32,10 @@ impl InputTelemetrySnapshot {
         let telemetry = value
             .get("car-telemetry")
             .or_else(|| value.get("carTelemetry"))
-            .ok_or(TelemetryParseError::MissingField("car-telemetry"))?;
+            .ok_or(TelemetryParseError::MissingAnyField(&[
+                "car-telemetry",
+                "carTelemetry",
+            ]))?;
 
         Ok(Self {
             throttle: telemetry_f32(telemetry, &["throttle"])?,
@@ -69,7 +76,10 @@ pub fn fetch_input_telemetry(
 ) -> Result<InputTelemetrySnapshot, FetchTelemetryError> {
     let base_url = base_url.trim_end_matches('/');
     let url = format!("{base_url}/stream-overlay-info");
-    let response = reqwest::blocking::get(url).map_err(FetchTelemetryError::Http)?;
+    let response = telemetry_client()
+        .get(url)
+        .send()
+        .map_err(FetchTelemetryError::Http)?;
     let response = response
         .error_for_status()
         .map_err(FetchTelemetryError::Http)?;
@@ -77,6 +87,17 @@ pub fn fetch_input_telemetry(
         .json::<Value>()
         .map_err(FetchTelemetryError::Http)?;
     InputTelemetrySnapshot::from_stream_overlay_value(&value).map_err(FetchTelemetryError::Parse)
+}
+
+fn telemetry_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .user_agent("pits-n-giggles-hud-renderer")
+            .timeout(FETCH_TIMEOUT)
+            .build()
+            .expect("build telemetry client")
+    })
 }
 
 fn normalize_percentage(value: f32) -> f32 {
@@ -208,7 +229,10 @@ mod tests {
         let error = InputTelemetrySnapshot::from_stream_overlay_value(&json!({}))
             .expect_err("missing telemetry block");
 
-        assert_eq!(error, TelemetryParseError::MissingField("car-telemetry"));
+        assert_eq!(
+            error,
+            TelemetryParseError::MissingAnyField(&["car-telemetry", "carTelemetry"])
+        );
     }
 
     #[test]
