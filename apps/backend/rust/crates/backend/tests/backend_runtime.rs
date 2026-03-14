@@ -636,3 +636,33 @@ async fn runtime_publishes_hud_notifications_for_udp_actions() {
         "hud-mfd-interaction-notification"
     );
 }
+
+#[tokio::test]
+async fn runtime_accepts_button_events_with_extra_trailing_bytes() {
+    let mut runtime = BackendRuntime::bind_udp(
+        "127.0.0.1:0",
+        BackendConfig {
+            toggle_overlays_udp_action_code: Some(10),
+            ..BackendConfig::default()
+        },
+    )
+    .await
+    .expect("bind runtime");
+
+    let mut raw_packet = button_packet(10, 4).to_bytes();
+    raw_packet.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+
+    let outcome = runtime.process_raw_packet(&raw_packet);
+    assert!(matches!(
+        outcome,
+        telemetry_core::PacketProcessingOutcome::Accepted(f1_types::F1Packet::Event(_))
+    ));
+
+    let updates = runtime.frontend_update_state().hud_entries_after(None);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(
+        updates[0].payload["message-type"],
+        "hud-toggle-notification"
+    );
+    assert_eq!(updates[0].payload["message"]["oid"], "");
+}
