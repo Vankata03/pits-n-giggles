@@ -35,8 +35,8 @@ import psutil
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QIcon
 
-from .base import BaseOverlay
 from lib.config import OverlayPosition
+from .base import BaseOverlay
 
 
 class RECT(ctypes.Structure):
