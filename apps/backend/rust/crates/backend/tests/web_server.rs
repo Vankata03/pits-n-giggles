@@ -7,9 +7,9 @@ use backend::{
     SharedShutdownState, WebServerConfig, build_router,
 };
 use f1_types::{
-    CarTelemetryData, DriverStatus, F1Packet, F1PacketType, LapData, PacketCarTelemetryData,
-    PacketHeader, PacketLapData, PacketParticipantsData, PacketSessionData, ParticipantData,
-    PitStatus, Sector, SessionType24, WeatherForecastSample,
+    CarMotionData, CarTelemetryData, DriverStatus, F1Packet, F1PacketType, LapData,
+    PacketCarTelemetryData, PacketHeader, PacketLapData, PacketMotionData, PacketParticipantsData,
+    PacketSessionData, ParticipantData, PitStatus, Sector, SessionType24, WeatherForecastSample,
 };
 use http_body_util::BodyExt;
 use serde_json::Value;
@@ -227,6 +227,40 @@ fn car_telemetry_packet() -> PacketCarTelemetryData {
     let mut telemetry = vec![empty_telemetry_sample(); PacketCarTelemetryData::MAX_CARS];
     telemetry[1] = telemetry_sample_for_player();
     PacketCarTelemetryData::from_values(header(F1PacketType::CarTelemetry, 4), telemetry, 255, 2, 6)
+}
+
+fn motion_sample(index: usize) -> CarMotionData {
+    let n = index as f32;
+    CarMotionData::from_values(
+        100.0 + n,
+        1.0,
+        200.0 + n,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1.5,
+        0.2,
+        0.0,
+        0.5 + n * 0.1,
+        0.0,
+        0.0,
+    )
+}
+
+fn motion_packet() -> PacketMotionData {
+    let empty = CarMotionData::from_values(
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    );
+    let mut motion = vec![empty; PacketMotionData::MAX_CARS];
+    motion[1] = motion_sample(1);
+    motion[2] = motion_sample(2);
+    PacketMotionData::from_values(header(F1PacketType::Motion, 5), motion)
 }
 
 fn cwd_lock() -> &'static Mutex<()> {
@@ -559,6 +593,7 @@ async fn stream_overlay_info_exposes_car_telemetry_for_hud_prototypes() {
         session_state.apply_packet(F1Packet::Participants(participants_packet()));
         session_state.apply_packet(F1Packet::LapData(lap_packet()));
         session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
     });
 
     let app = build_router(
@@ -585,6 +620,7 @@ async fn stream_overlay_info_exposes_car_telemetry_for_hud_prototypes() {
 
     assert_eq!(value["car-telemetry"]["throttle"], 73.0);
     assert_eq!(value["car-telemetry"]["brake"], 14.0);
+    assert_eq!(value["ref-index"], 1);
     assert!(
         (value["car-telemetry"]["steering"]
             .as_f64()
@@ -594,6 +630,16 @@ async fn stream_overlay_info_exposes_car_telemetry_for_hud_prototypes() {
             < 0.001
     );
     assert_eq!(value["car-telemetry"]["rev-lights-percent"], 91);
+    assert_eq!(value["motion"][1]["index"], 1);
+    assert_eq!(value["motion"][1]["motion"]["world-position"]["x"], 101.0);
+    assert!(
+        (value["motion"][1]["motion"]["orientation"]["yaw"]
+            .as_f64()
+            .expect("yaw as f64")
+            - 0.6)
+            .abs()
+            < 0.001
+    );
 }
 
 #[tokio::test]

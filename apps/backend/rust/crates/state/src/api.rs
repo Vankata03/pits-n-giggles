@@ -705,6 +705,7 @@ impl SessionState {
 
         json!({
             "show-sample-data-at-start": show_sample_data_at_start,
+            "ref-index": reference_index,
             "f1-game-year": self.session_info.game_year,
             "f1-packet-format": self.session_info.packet_format,
             "event-type": event_type,
