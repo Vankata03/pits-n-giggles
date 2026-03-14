@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) [2025] [Ashwin Natarajan]
+# Copyright (c) [2026] [Ashwin Natarajan]
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,174 +20,80 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# -------------------------------------- IMPORTS -----------------------------------------------------------------------
-
 import logging
-import math
-from pathlib import Path
-from typing import Any, Dict, Optional, final
+from typing import Any, Dict, Optional
 
-from PySide6.QtCore import Q_ARG, QMetaObject, Qt
-
-from apps.hud.ui.infra.hf_types import DriverMotionInfo, LiveSessionMotionInfo
-from apps.hud.ui.overlays.base import BaseOverlayQML
+from apps.hud.ui.overlays.base import RustNativeOverlay
 from lib.config import TRACK_RADAR_OVERLAY_ID, OverlayPosition
 
-# -------------------------------------- CLASSES -----------------------------------------------------------------------
 
-class TrackRadarOverlay(BaseOverlayQML):
-    """
-    Track radar overlay that displays all cars relative to the reference driver.
-
-    - Centers the radar on the reference driver
-    - Shows all other cars with their relative positions and headings
-    - Updates in real-time with motion data
-    """
-
-    QML_FILE = Path(__file__).parent / "track_radar.qml"
+class TrackRadarOverlay(RustNativeOverlay):
     OVERLAY_ID = TRACK_RADAR_OVERLAY_ID
+    BASE_WINDOW_WIDTH = 300
+    BASE_WINDOW_HEIGHT = 300
+    RUST_BINARY_STEM = "track_radar"
 
-    def __init__(self,
-                 config: OverlayPosition,
-                 logger: logging.Logger,
-                 locked: bool,
-                 opacity: int,
-                 scale_factor: float,
-                 windowed_overlay: bool,
-                 refresh_interval_ms: int,
-                 idle_opacity: int,):
-
-        assert refresh_interval_ms
-        self.idle_opacity = idle_opacity
-        super().__init__(config, logger, locked, opacity, scale_factor, windowed_overlay, refresh_interval_ms)
-        self.subscribe_hf(LiveSessionMotionInfo)
+    def __init__(
+        self,
+        config: OverlayPosition,
+        logger: logging.Logger,
+        locked: bool,
+        opacity: int,
+        scale_factor: float,
+        windowed_overlay: bool,
+        render_interval_ms: int,
+        fetch_interval_ms: int,
+        idle_opacity: int,
+        base_url: Optional[str] = None,
+    ) -> None:
+        assert render_interval_ms > 0
+        assert fetch_interval_ms > 0
+        self._render_interval_ms = render_interval_ms
+        self._fetch_interval_ms = fetch_interval_ms
+        self._idle_opacity = idle_opacity
+        super().__init__(
+            config,
+            logger,
+            locked,
+            opacity,
+            scale_factor,
+            windowed_overlay,
+            base_url=base_url,
+        )
         self._register_handlers()
-
-    @final
-    def _setup_window(self):
-        """Set the opacity property when the window is ready"""
-        super()._setup_window()
-        self._set_base_opacity_property(self.opacity)
-        self._set_idle_opacity_property(self.idle_opacity)
-
-    @final
-    def set_opacity(self, opacity: int):
-        """Set opacity."""
-        self.logger.debug(f'{self.OVERLAY_ID} | [OVERRIDDEN HANDLER] Setting opacity to {opacity}')
-        super().set_opacity(opacity)
-        self._set_base_opacity_property(opacity)
-
-    @final
-    def set_locked_state(self, locked: bool):
-        """Set locked state."""
-        self.logger.debug(f'{self.OVERLAY_ID} | [OVERRIDDEN HANDLER] Setting locked state to {locked}')
-        super().set_locked_state(locked)
-        self._set_locked_property(locked)
 
     def _register_handlers(self):
         @self.on_event("set_track_radar_idle_opacity")
         def _handle_set_track_radar_idle_opacity(data: Dict[str, Any]):
-            """Set track radar idle opacity."""
-            self.logger.debug('%s | Received "set_track_radar_idle_opacity" event. Opacity: %s', self.OVERLAY_ID, data)
             opacity = data["opacity"]
-            self.idle_opacity = opacity
-            self._set_idle_opacity_property(opacity)
+            if self._idle_opacity == opacity:
+                return
+            try:
+                self.config = self.get_window_info()
+            except Exception:  # pylint: disable=broad-except
+                pass
+            self._idle_opacity = opacity
+            self._restart_native_overlay()
 
-    @final
-    def render_frame(self):
-        """Render a new frame."""
-        data = self.get_latest_hf_data(LiveSessionMotionInfo)
-        if not data:
-            return
-
-        ref_driver = self._get_reference_driver(data)
-        if not ref_driver or not ref_driver.car_motion:
-            return
-
-        # Calculate relative positions for all drivers
-        driver_list = self._calculate_relative_positions(data, ref_driver)
-
-        # Send data to QML and trigger update
-        QMetaObject.invokeMethod(
-            self._root,
-            "updateTelemetry",
-            Qt.ConnectionType.QueuedConnection,
-            Q_ARG("QVariant", driver_list)
-        )
-
-    def _get_reference_driver(self, session: LiveSessionMotionInfo) -> Optional[DriverMotionInfo]:
-        """Get the reference driver from session data."""
-        return next(
-            (driver for driver in session.motion_data if driver.is_ref),
-            None
-        )
-
-    def _calculate_relative_positions(self,
-                                     session: LiveSessionMotionInfo,
-                                     ref_driver: DriverMotionInfo) -> list[dict]:
-        """
-        Calculate relative positions of all drivers to the reference driver.
-
-        Returns a list of dictionaries with:
-        - name: driver name
-        - team: team name
-        - is_ref: whether this is the reference driver
-        - relX: relative X position (right is positive)
-        - relZ: relative Z position (forward is positive)
-        - heading: heading angle in degrees relative to ref driver
-        """
-        driver_list = []
-
-        # Get reference driver position and orientation
-        ref_pos = ref_driver.car_motion.world_position
-        ref_yaw = ref_driver.car_motion.orientation.yaw
-
-        # Rotate to ref driver's coordinate system
-        # In F1 games, typically X is right and Z is forward
-        # We need forward to be up on the radar (Z axis)
-        cos_yaw = math.cos(-ref_yaw)
-        sin_yaw = math.sin(-ref_yaw)
-
-        for driver in session.motion_data:
-            if not driver.car_motion:
-                # Can be none if the motion packet has not arrived by then
-                continue
-            # Get absolute position
-            pos = driver.car_motion.world_position
-
-            # Calculate vector from ref to this car in world space
-            dx = pos.x - ref_pos.x
-            dz = pos.z - ref_pos.z
-
-            # Swap axes: use Z as the primary forward axis
-            rel_x = dz * sin_yaw + dx * cos_yaw  # Right
-            rel_z = dz * cos_yaw - dx * sin_yaw  # Forward
-
-            # Calculate heading relative to ref driver
-            driver_yaw = driver.car_motion.orientation.yaw
-            rel_heading = math.degrees(driver_yaw - ref_yaw)
-
-            driver_list.append({
-                'name': driver.name,
-                'team': driver.team,
-                'is_ref': driver.is_ref,
-                'relX': rel_x,
-                'relZ': rel_z,
-                'heading': rel_heading,
-                'index': driver.index,
-                'track_position': driver.track_position
-            })
-
-        return driver_list
-
-    def _set_base_opacity_property(self, opacity: int):
-        if self._root:
-            self._root.setProperty("baseOpacity", opacity / 100.0)
-
-    def _set_idle_opacity_property(self, opacity: int):
-        if self._root:
-            self._root.setProperty("idleOpacity", opacity / 100.0)
-
-    def _set_locked_property(self, locked: bool):
-        if self._root:
-            self._root.setProperty("lockedMode", locked)
+    def _build_overlay_args(self) -> list[str]:
+        overlay_args = [
+            "--title",
+            self._title,
+            "--render-interval-ms",
+            str(self._render_interval_ms),
+            "--fetch-interval-ms",
+            str(self._fetch_interval_ms),
+            "--idle-opacity",
+            str(self._idle_opacity / 100.0),
+            "--x",
+            str(self.config.x),
+            "--y",
+            str(self.config.y),
+            "--width",
+            str(self._scaled_window_width),
+            "--height",
+            str(self._scaled_window_height),
+        ]
+        if self._backend_url:
+            overlay_args.append(self._backend_url)
+        return overlay_args
