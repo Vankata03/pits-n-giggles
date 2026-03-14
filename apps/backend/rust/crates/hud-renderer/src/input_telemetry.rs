@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{FetchTelemetryError, TelemetryParseError, fetch_stream_overlay_value};
+use crate::{FetchTelemetryError, TelemetryParseError, fetch_input_telemetry_value};
 
 const MAX_PERCENTAGE: f32 = 100.0;
 const STEERING_RANGE: f32 = 100.0;
@@ -69,7 +69,7 @@ impl HudDisplayMetrics {
 pub fn fetch_input_telemetry(
     base_url: &str,
 ) -> Result<InputTelemetrySnapshot, FetchTelemetryError> {
-    let value = fetch_stream_overlay_value(base_url)?;
+    let value = fetch_input_telemetry_value(base_url)?;
     InputTelemetrySnapshot::from_stream_overlay_value(&value).map_err(FetchTelemetryError::Parse)
 }
 

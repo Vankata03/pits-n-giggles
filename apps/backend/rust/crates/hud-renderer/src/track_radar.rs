@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{FetchTelemetryError, TelemetryParseError, fetch_stream_overlay_value};
+use crate::{FetchTelemetryError, TelemetryParseError, fetch_track_radar_value};
 
 const SIDE_ALERT_MIN_X: f32 = 1.5;
 const SIDE_ALERT_MAX_X: f32 = 4.0;
@@ -151,7 +151,7 @@ impl TrackRadarSnapshot {
 }
 
 pub fn fetch_track_radar(base_url: &str) -> Result<TrackRadarSnapshot, FetchTelemetryError> {
-    let value = fetch_stream_overlay_value(base_url)?;
+    let value = fetch_track_radar_value(base_url)?;
     TrackRadarSnapshot::from_stream_overlay_value(&value).map_err(FetchTelemetryError::Parse)
 }
 

@@ -5,7 +5,10 @@ mod lap_timer;
 mod track_radar;
 
 pub use error::{FetchTelemetryError, TelemetryParseError};
-pub use http::{fetch_stream_overlay_value, fetch_telemetry_info_value};
+pub use http::{
+    fetch_input_telemetry_value, fetch_stream_overlay_value, fetch_telemetry_info_value,
+    fetch_track_radar_value,
+};
 pub use input_telemetry::{HudDisplayMetrics, InputTelemetrySnapshot, fetch_input_telemetry};
 pub use lap_timer::{
     LapTimerCompletedLap, LapTimerController, LapTimerCurrentLap, LapTimerDeltaState,

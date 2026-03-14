@@ -643,6 +643,100 @@ async fn stream_overlay_info_exposes_car_telemetry_for_hud_prototypes() {
 }
 
 #[tokio::test]
+async fn hud_input_telemetry_route_exposes_minimal_input_payload() {
+    let state = SharedSessionState::new();
+    state.with_write(|session_state| {
+        session_state.apply_packet(F1Packet::Session(session_packet()));
+        session_state.apply_packet(F1Packet::Participants(participants_packet()));
+        session_state.apply_packet(F1Packet::LapData(lap_packet()));
+        session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
+    });
+
+    let app = build_router(
+        state,
+        SharedDerivedState::new(),
+        SharedFrontendUpdateState::new(),
+        control_state(),
+        shutdown_state(),
+        WebServerConfig::default(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/hud/input-telemetry")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(value["car-telemetry"]["throttle"], 73.0);
+    assert_eq!(value["car-telemetry"]["brake"], 14.0);
+    assert!(
+        (value["car-telemetry"]["steering"]
+            .as_f64()
+            .expect("steering as f64")
+            + 15.0)
+            .abs()
+            < 0.001
+    );
+    assert_eq!(value["car-telemetry"]["rev-lights-percent"], 91);
+    assert!(value.get("motion").is_none());
+}
+
+#[tokio::test]
+async fn hud_track_radar_route_exposes_minimal_motion_payload() {
+    let state = SharedSessionState::new();
+    state.with_write(|session_state| {
+        session_state.apply_packet(F1Packet::Session(session_packet()));
+        session_state.apply_packet(F1Packet::Participants(participants_packet()));
+        session_state.apply_packet(F1Packet::LapData(lap_packet()));
+        session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
+    });
+
+    let app = build_router(
+        state,
+        SharedDerivedState::new(),
+        SharedFrontendUpdateState::new(),
+        control_state(),
+        shutdown_state(),
+        WebServerConfig::default(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/hud/track-radar")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(value["ref-index"], 1);
+    assert_eq!(value["motion"][1]["index"], 1);
+    assert_eq!(value["motion"][1]["motion"]["world-position"]["x"], 101.0);
+    assert!(
+        (value["motion"][1]["motion"]["orientation"]["yaw"]
+            .as_f64()
+            .expect("yaw as f64")
+            - 0.6)
+            .abs()
+            < 0.001
+    );
+    assert!(value.get("car-telemetry").is_none());
+}
+
+#[tokio::test]
 async fn control_stats_route_reports_runtime_control_state() {
     let control = SharedBackendControlState::new(
         Some(5),

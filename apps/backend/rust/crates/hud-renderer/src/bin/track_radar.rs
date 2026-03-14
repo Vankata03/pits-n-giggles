@@ -298,6 +298,8 @@ fn telemetry_worker_loop(
     sender: Sender<TelemetryUpdate>,
     stop: Arc<AtomicBool>,
 ) {
+    let mut next_fetch_at = Instant::now();
+
     while !stop.load(Ordering::Relaxed) {
         let update = match fetch_track_radar(&base_url) {
             Ok(snapshot) => TelemetryUpdate::Snapshot(snapshot),
@@ -308,19 +310,22 @@ fn telemetry_worker_loop(
             break;
         }
 
-        sleep_until_stop(&stop, fetch_interval);
+        next_fetch_at += fetch_interval;
+        if next_fetch_at < Instant::now() {
+            next_fetch_at = Instant::now();
+        }
+        sleep_until_stop(&stop, next_fetch_at);
     }
 }
 
-fn sleep_until_stop(stop: &AtomicBool, duration: Duration) {
-    let started_at = Instant::now();
+fn sleep_until_stop(stop: &AtomicBool, deadline: Instant) {
     while !stop.load(Ordering::Relaxed) {
-        let elapsed = started_at.elapsed();
-        if elapsed >= duration {
+        let now = Instant::now();
+        if now >= deadline {
             return;
         }
 
-        thread::sleep((duration - elapsed).min(Duration::from_millis(10)));
+        thread::sleep((deadline - now).min(Duration::from_millis(10)));
     }
 }
 
