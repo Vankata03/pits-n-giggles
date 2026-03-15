@@ -233,6 +233,7 @@ class RustNativeOverlay(BaseOverlay, QObject):
         raise NotImplementedError
 
     def _launch_native_overlay(self) -> None:
+        self._terminate_stale_overlay_processes()
         self._launch_generation += 1
         self._title = self._build_window_title()
         command, workdir = self._build_launch_command()
@@ -315,6 +316,43 @@ class RustNativeOverlay(BaseOverlay, QObject):
 
     def _build_window_title(self) -> str:
         return f"png-rust-{self.OVERLAY_ID}-{os.getpid()}-{self._launch_generation}"
+
+    def _terminate_stale_overlay_processes(self) -> None:
+        title_prefix = f"png-rust-{self.OVERLAY_ID}-"
+        stale_processes = []
+
+        for process in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                if process.pid == os.getpid():
+                    continue
+
+                cmdline = process.info.get("cmdline") or []
+                if not cmdline:
+                    continue
+
+                for index, arg in enumerate(cmdline[:-1]):
+                    if arg == "--title" and cmdline[index + 1].startswith(title_prefix):
+                        stale_processes.append(process)
+                        break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        for process in stale_processes:
+            try:
+                children = process.children(recursive=True)
+                self.logger.info(
+                    "%s | Terminating stale Rust overlay process pid=%s",
+                    self.OVERLAY_ID,
+                    process.pid,
+                )
+                for child in children:
+                    child.terminate()
+                process.terminate()
+                _, alive = psutil.wait_procs([process, *children], timeout=3)
+                for proc in alive:
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
 
     def _find_repo_root(self) -> Path:
         current = Path(__file__).resolve()

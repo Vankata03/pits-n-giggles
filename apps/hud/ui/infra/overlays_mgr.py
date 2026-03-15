@@ -64,6 +64,7 @@ class OverlaysMgr:
         load_fonts(debug_log_printer=self.logger.debug, error_log_printer=self.logger.error)
         self.debug_mode = debug
         self.running = False
+        self._overlays_visible = True
         self.rate_limiter = RateLimiter(interval_ms=settings.Display.refresh_interval)
         self.wdt = WatchDogTimerSync(
             status_callback=self._wdt_status_callback,
@@ -99,6 +100,9 @@ class OverlaysMgr:
             show_ers_drs_info=settings.HUD.timing_tower_col_options.show_ers_drs_info,
             show_pens=settings.HUD.timing_tower_col_options.show_pens,
             show_tl_warns=settings.HUD.timing_tower_col_options.show_tl_warns,
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=settings.Display.local_telemetry_interval_ms,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
         self._register_overlay_if_enabled(
@@ -215,7 +219,7 @@ class OverlaysMgr:
         if oid:
             self.window_manager.unicast_data(oid, '__toggle_visibility__', {}, high_prio=True)
         else:
-            self.window_manager.broadcast_data('__toggle_visibility__', {}, high_prio=True)
+            self._set_overlays_visibility(not self._overlays_visible)
 
     def on_locked_state_change(self, args: Dict[str, bool]):
         """Handle locked state change."""
@@ -247,6 +251,7 @@ class OverlaysMgr:
 
         # If unlocking, nothing to persist
         if not locked_value:
+            self._overlays_visible = True
             return rsp
 
         # --------------------------------------------------
@@ -395,6 +400,7 @@ class OverlaysMgr:
         )
 
     def _set_overlays_visibility(self, visible: bool):
+        self._overlays_visible = visible
         self.window_manager.broadcast_data("__set_visibility__", {"visible": visible}, high_prio=True)
 
     def _set_telemetry_active(self, active: bool):

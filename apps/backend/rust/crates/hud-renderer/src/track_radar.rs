@@ -57,11 +57,6 @@ pub struct RadarDisplayState {
 
 impl TrackRadarSnapshot {
     pub fn from_stream_overlay_value(value: &Value) -> Result<Self, TelemetryParseError> {
-        let ref_index = value
-            .get("ref-index")
-            .and_then(Value::as_u64)
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or(TelemetryParseError::MissingField("ref-index"))?;
         let drivers = value
             .get("motion")
             .and_then(Value::as_array)
@@ -69,6 +64,12 @@ impl TrackRadarSnapshot {
             .iter()
             .map(parse_driver)
             .collect::<Result<Vec<_>, _>>()?;
+        let ref_index = value
+            .get("ref-index")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .or_else(|| drivers.first().map(|driver| driver.index))
+            .unwrap_or(0);
 
         Ok(Self { ref_index, drivers })
     }
@@ -77,15 +78,35 @@ impl TrackRadarSnapshot {
         &self,
         radar_range: f32,
     ) -> Result<RadarDisplayState, TelemetryParseError> {
+        if self.drivers.is_empty() {
+            return Ok(RadarDisplayState {
+                drivers: Vec::new(),
+                cars_nearby: false,
+                left_alert: false,
+                right_alert: false,
+            });
+        }
+
         let reference_driver = self
             .drivers
             .iter()
             .find(|driver| driver.index == self.ref_index)
+            .or_else(|| self.drivers.first())
             .ok_or(TelemetryParseError::InvalidField("ref-index"))?;
-        let reference_motion = reference_driver
-            .motion
-            .as_ref()
-            .ok_or(TelemetryParseError::InvalidField("motion"))?;
+        let reference_motion = reference_driver.motion.as_ref().or_else(|| {
+            self.drivers
+                .iter()
+                .filter_map(|driver| driver.motion.as_ref())
+                .next()
+        });
+        let Some(reference_motion) = reference_motion else {
+            return Ok(RadarDisplayState {
+                drivers: Vec::new(),
+                cars_nearby: false,
+                left_alert: false,
+                right_alert: false,
+            });
+        };
 
         let ref_pos = &reference_motion.world_position;
         let ref_yaw = reference_motion.yaw;
@@ -373,5 +394,22 @@ mod tests {
 
         assert!(target.relative_x.abs() < 0.001);
         assert!((target.relative_z - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn tolerates_empty_track_radar_payload_before_telemetry_arrives() {
+        let value = json!({
+            "ref-index": null,
+            "motion": []
+        });
+
+        let snapshot = TrackRadarSnapshot::from_stream_overlay_value(&value).expect("parse");
+        let display = snapshot.display_state(25.0).expect("display");
+
+        assert_eq!(snapshot.ref_index, 0);
+        assert!(display.drivers.is_empty());
+        assert!(!display.cars_nearby);
+        assert!(!display.left_alert);
+        assert!(!display.right_alert);
     }
 }

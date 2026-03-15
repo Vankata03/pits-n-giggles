@@ -31,7 +31,7 @@ const REF_CAR_COLOR: Color32 = Color32::from_rgb(0, 255, 0);
 const TARGET_CAR_COLOR: Color32 = Color32::from_rgb(255, 255, 255);
 const TARGET_CAR_BORDER: Color32 = Color32::from_rgb(136, 136, 136);
 const ALERT_RGBA: (u8, u8, u8, u8) = (255, 0, 0, 88);
-const TOOLTIP_BG_RGBA: (u8, u8, u8, u8) = (0, 0, 0, 220);
+const TOOLTIP_BG_RGBA: (u8, u8, u8, u8) = (0, 0, 0, 88);
 
 fn main() -> Result<(), eframe::Error> {
     let config = AppConfig::from_env();
@@ -63,7 +63,14 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         &title,
         options,
-        Box::new(move |_creation_context| Box::new(TrackRadarApp::new(config))),
+        Box::new(move |creation_context| {
+            let mut style = (*creation_context.egui_ctx.style()).clone();
+            style.visuals.window_fill = Color32::TRANSPARENT;
+            style.visuals.panel_fill = Color32::TRANSPARENT;
+            style.visuals.extreme_bg_color = Color32::TRANSPARENT;
+            creation_context.egui_ctx.set_style(style);
+            Box::new(TrackRadarApp::new(config))
+        }),
     )
 }
 
@@ -363,6 +370,10 @@ impl eframe::App for TrackRadarApp {
                 }
             });
     }
+
+    fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
 }
 
 fn sample_snapshot(elapsed: f32) -> TrackRadarSnapshot {
@@ -633,7 +644,7 @@ fn paint_tooltip(painter: &Painter, label: &str, marker_center: Pos2, scale: f32
     painter.rect_filled(
         tooltip_rect,
         Rounding::same(3.0 * scale),
-        rgba(TOOLTIP_BG_RGBA),
+        fade_color(rgba(TOOLTIP_BG_RGBA), 0.7),
     );
     painter.galley(
         tooltip_rect.center() - galley.size() * 0.5,

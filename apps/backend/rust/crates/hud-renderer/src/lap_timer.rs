@@ -52,7 +52,7 @@ impl LapTimerSnapshot {
         let session_uid = value
             .get("session-uid")
             .and_then(Value::as_u64)
-            .ok_or(TelemetryParseError::MissingField("session-uid"))?;
+            .unwrap_or(0);
         let safety_car_status = value
             .get("safety-car-status")
             .and_then(Value::as_str)
@@ -74,19 +74,32 @@ impl LapTimerSnapshot {
             .map(parse_table_entry)
             .collect::<Result<Vec<_>, _>>()?;
 
+        if table_entries.is_empty() {
+            return Ok(Self {
+                session_type,
+                session_uid,
+                safety_car_status,
+                ref_driver_index: 0,
+                table_entries,
+            });
+        }
+
         let ref_driver_index = if is_spectating {
-            let spectator_index = spectator_car_index
-                .ok_or(TelemetryParseError::MissingField("spectator-car-index"))?;
-            table_entries
-                .iter()
-                .find(|entry| entry.index == spectator_index)
-                .map(|entry| entry.index)
+            spectator_car_index
+                .and_then(|spectator_index| {
+                    table_entries
+                        .iter()
+                        .find(|entry| entry.index == spectator_index)
+                        .map(|entry| entry.index)
+                })
+                .or_else(|| table_entries.first().map(|entry| entry.index))
                 .ok_or(TelemetryParseError::InvalidField("spectator-car-index"))?
         } else {
             table_entries
                 .iter()
                 .find(|entry| entry.is_player)
                 .map(|entry| entry.index)
+                .or_else(|| table_entries.first().map(|entry| entry.index))
                 .ok_or(TelemetryParseError::InvalidField("table-entries"))?
         };
 
@@ -160,6 +173,13 @@ impl LapTimerController {
         snapshot: &LapTimerSnapshot,
         now_ms: u64,
     ) -> Result<LapTimerDisplay, TelemetryParseError> {
+        if snapshot.table_entries.is_empty() {
+            self.session_uid = Some(snapshot.session_uid);
+            self.last_lap_num = None;
+            self.show_last_lap_sector_bar_until_ms = None;
+            return Ok(LapTimerDisplay::empty());
+        }
+
         if self.session_uid != Some(snapshot.session_uid) {
             self.session_uid = Some(snapshot.session_uid);
             self.last_lap_num = None;
@@ -664,5 +684,25 @@ mod tests {
             .update(&changed_snapshot, 6_001)
             .expect("expired");
         assert_eq!(display.current_sector_status, [0, -2, -2]);
+    }
+
+    #[test]
+    fn tolerates_empty_lap_timer_payload_before_telemetry_arrives() {
+        let value = json!({
+            "event-type": null,
+            "session-uid": null,
+            "safety-car-status": "",
+            "is-spectating": false,
+            "table-entries": []
+        });
+
+        let snapshot = LapTimerSnapshot::from_telemetry_info_value(&value).expect("parse");
+        let mut controller = LapTimerController::new();
+        let display = controller.update(&snapshot, 0).expect("display");
+
+        assert_eq!(snapshot.session_uid, 0);
+        assert_eq!(snapshot.ref_driver_index, 0);
+        assert!(snapshot.table_entries.is_empty());
+        assert_eq!(display, super::LapTimerDisplay::empty());
     }
 }

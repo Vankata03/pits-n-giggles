@@ -119,6 +119,12 @@ After that, the next best candidate is **`TrackRadarOverlay`**, because it also 
    cargo run --manifest-path apps/backend/rust/Cargo.toml -p hud-renderer --bin lap_timer -- --sample
    ```
 
+   The timing tower prototype is also available as a standalone binary:
+
+   ```bash
+   cargo run --manifest-path apps/backend/rust/Cargo.toml -p hud-renderer --bin timing_tower -- --sample
+   ```
+
 3. **Compare frame pacing**
    - check update smoothness and CPU/GPU usage against the current PySide6/QML overlay
 

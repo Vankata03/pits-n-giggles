@@ -2,6 +2,7 @@ mod error;
 mod http;
 mod input_telemetry;
 mod lap_timer;
+mod timing_tower;
 mod track_radar;
 
 pub use error::{FetchTelemetryError, TelemetryParseError};
@@ -13,6 +14,9 @@ pub use input_telemetry::{HudDisplayMetrics, InputTelemetrySnapshot, fetch_input
 pub use lap_timer::{
     LapTimerCompletedLap, LapTimerController, LapTimerCurrentLap, LapTimerDeltaState,
     LapTimerDisplay, LapTimerEntry, LapTimerSnapshot, fetch_lap_timer,
+};
+pub use timing_tower::{
+    TimingTowerDisplay, TimingTowerEntry, TimingTowerSnapshot, fetch_timing_tower,
 };
 pub use track_radar::{
     RadarDisplayState, RadarDriver, RadarDriverMotion, RadarDriverState, RadarVector3,
