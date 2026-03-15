@@ -7,9 +7,9 @@ use backend::{
     SharedShutdownState, WebServerConfig, build_router,
 };
 use f1_types::{
-    DriverStatus, F1Packet, F1PacketType, LapData, PacketHeader, PacketLapData,
-    PacketParticipantsData, PacketSessionData, ParticipantData, PitStatus, Sector, SessionType24,
-    WeatherForecastSample,
+    CarMotionData, CarTelemetryData, DriverStatus, F1Packet, F1PacketType, LapData,
+    PacketCarTelemetryData, PacketHeader, PacketLapData, PacketMotionData, PacketParticipantsData,
+    PacketSessionData, ParticipantData, PitStatus, Sector, SessionType24, WeatherForecastSample,
 };
 use http_body_util::BodyExt;
 use serde_json::Value;
@@ -179,6 +179,88 @@ fn lap_packet() -> PacketLapData {
         ));
     }
     PacketLapData::from_values(header(F1PacketType::LapData, 3), laps, -1, -1)
+}
+
+fn telemetry_sample_for_player() -> CarTelemetryData {
+    CarTelemetryData::from_values(
+        301,
+        0.73,
+        -0.15,
+        0.14,
+        0,
+        7,
+        11_500,
+        true,
+        91,
+        0,
+        [400, 401, 402, 403],
+        [80, 81, 82, 83],
+        [90, 91, 92, 93],
+        110,
+        [21.5, 21.6, 21.7, 21.8],
+        [0, 0, 0, 0],
+    )
+}
+
+fn empty_telemetry_sample() -> CarTelemetryData {
+    CarTelemetryData::from_values(
+        0,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        0,
+        false,
+        0,
+        0,
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        0,
+        [0.0, 0.0, 0.0, 0.0],
+        [0, 0, 0, 0],
+    )
+}
+
+fn car_telemetry_packet() -> PacketCarTelemetryData {
+    let mut telemetry = vec![empty_telemetry_sample(); PacketCarTelemetryData::MAX_CARS];
+    telemetry[1] = telemetry_sample_for_player();
+    PacketCarTelemetryData::from_values(header(F1PacketType::CarTelemetry, 4), telemetry, 255, 2, 6)
+}
+
+fn motion_sample(index: usize) -> CarMotionData {
+    let n = index as f32;
+    CarMotionData::from_values(
+        100.0 + n,
+        1.0,
+        200.0 + n,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1.5,
+        0.2,
+        0.0,
+        0.5 + n * 0.1,
+        0.0,
+        0.0,
+    )
+}
+
+fn motion_packet() -> PacketMotionData {
+    let empty = CarMotionData::from_values(
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    );
+    let mut motion = vec![empty; PacketMotionData::MAX_CARS];
+    motion[1] = motion_sample(1);
+    motion[2] = motion_sample(2);
+    PacketMotionData::from_values(header(F1PacketType::Motion, 5), motion)
 }
 
 fn cwd_lock() -> &'static Mutex<()> {
@@ -501,6 +583,157 @@ async fn save_data_route_writes_manual_save_json() {
         saved_json["classification-data"][0]["driver-info"]["name"],
         "Driver 0"
     );
+}
+
+#[tokio::test]
+async fn stream_overlay_info_exposes_car_telemetry_for_hud_prototypes() {
+    let state = SharedSessionState::new();
+    state.with_write(|session_state| {
+        session_state.apply_packet(F1Packet::Session(session_packet()));
+        session_state.apply_packet(F1Packet::Participants(participants_packet()));
+        session_state.apply_packet(F1Packet::LapData(lap_packet()));
+        session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
+    });
+
+    let app = build_router(
+        state,
+        SharedDerivedState::new(),
+        SharedFrontendUpdateState::new(),
+        control_state(),
+        shutdown_state(),
+        WebServerConfig::default(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/stream-overlay-info")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(value["car-telemetry"]["throttle"], 73.0);
+    assert_eq!(value["car-telemetry"]["brake"], 14.0);
+    assert_eq!(value["ref-index"], 1);
+    assert!(
+        (value["car-telemetry"]["steering"]
+            .as_f64()
+            .expect("steering as f64")
+            + 15.0)
+            .abs()
+            < 0.001
+    );
+    assert_eq!(value["car-telemetry"]["rev-lights-percent"], 91);
+    assert_eq!(value["motion"][1]["index"], 1);
+    assert_eq!(value["motion"][1]["motion"]["world-position"]["x"], 101.0);
+    assert!(
+        (value["motion"][1]["motion"]["orientation"]["yaw"]
+            .as_f64()
+            .expect("yaw as f64")
+            - 0.6)
+            .abs()
+            < 0.001
+    );
+}
+
+#[tokio::test]
+async fn hud_input_telemetry_route_exposes_minimal_input_payload() {
+    let state = SharedSessionState::new();
+    state.with_write(|session_state| {
+        session_state.apply_packet(F1Packet::Session(session_packet()));
+        session_state.apply_packet(F1Packet::Participants(participants_packet()));
+        session_state.apply_packet(F1Packet::LapData(lap_packet()));
+        session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
+    });
+
+    let app = build_router(
+        state,
+        SharedDerivedState::new(),
+        SharedFrontendUpdateState::new(),
+        control_state(),
+        shutdown_state(),
+        WebServerConfig::default(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/hud/input-telemetry")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(value["car-telemetry"]["throttle"], 73.0);
+    assert_eq!(value["car-telemetry"]["brake"], 14.0);
+    assert!(
+        (value["car-telemetry"]["steering"]
+            .as_f64()
+            .expect("steering as f64")
+            + 15.0)
+            .abs()
+            < 0.001
+    );
+    assert_eq!(value["car-telemetry"]["rev-lights-percent"], 91);
+    assert!(value.get("motion").is_none());
+}
+
+#[tokio::test]
+async fn hud_track_radar_route_exposes_minimal_motion_payload() {
+    let state = SharedSessionState::new();
+    state.with_write(|session_state| {
+        session_state.apply_packet(F1Packet::Session(session_packet()));
+        session_state.apply_packet(F1Packet::Participants(participants_packet()));
+        session_state.apply_packet(F1Packet::LapData(lap_packet()));
+        session_state.apply_packet(F1Packet::CarTelemetry(car_telemetry_packet()));
+        session_state.apply_packet(F1Packet::Motion(motion_packet()));
+    });
+
+    let app = build_router(
+        state,
+        SharedDerivedState::new(),
+        SharedFrontendUpdateState::new(),
+        control_state(),
+        shutdown_state(),
+        WebServerConfig::default(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/hud/track-radar")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(value["ref-index"], 1);
+    assert_eq!(value["motion"][1]["index"], 1);
+    assert_eq!(value["motion"][1]["motion"]["world-position"]["x"], 101.0);
+    assert!(
+        (value["motion"][1]["motion"]["orientation"]["yaw"]
+            .as_f64()
+            .expect("yaw as f64")
+            - 0.6)
+            .abs()
+            < 0.001
+    );
+    assert!(value.get("car-telemetry").is_none());
 }
 
 #[tokio::test]

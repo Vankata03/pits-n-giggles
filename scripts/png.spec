@@ -87,16 +87,31 @@ def collect_directory(src_dir, dest_dir):
 
     return items
 
-def collect_rust_backend_binary():
-    rust_backend_bin = os.environ.get("PNG_RUST_BACKEND_BIN")
-    if not rust_backend_bin:
-        print("Warning: PNG_RUST_BACKEND_BIN not set, packaged build will not include Rust backend companion binary")
+def collect_rust_binary(env_var_name, display_name, expected_names=None):
+    rust_binary_path = os.environ.get(env_var_name)
+    if not rust_binary_path:
+        print(f"Warning: {env_var_name} not set, packaged build will not include the Rust {display_name} binary")
         return []
 
-    if not os.path.isfile(rust_backend_bin):
-        raise FileNotFoundError(f"Rust backend binary not found: {rust_backend_bin}")
+    if os.path.isfile(rust_binary_path):
+        return [(rust_binary_path, ".")]
 
-    return [(rust_backend_bin, ".")]
+    if os.path.isdir(rust_binary_path):
+        if not expected_names:
+            raise FileNotFoundError(
+                f"Rust {display_name} binary path points to a directory, but no expected binaries were provided: {rust_binary_path}"
+            )
+
+        binaries = []
+        for binary_name in expected_names:
+            filename = f"{binary_name}.exe" if os.name == "nt" else binary_name
+            binary_path = os.path.join(rust_binary_path, filename)
+            if not os.path.isfile(binary_path):
+                raise FileNotFoundError(f"Rust {display_name} binary not found: {binary_path}")
+            binaries.append((binary_path, "."))
+        return binaries
+
+    raise FileNotFoundError(f"Rust {display_name} binary not found: {rust_binary_path}")
 
 # --------------------------------------------------------------------------------------------------
 # Modules and Assets
@@ -109,7 +124,14 @@ hiddenimports = (
     collect_submodules("apps.broker")
 )
 
-rust_binaries = collect_rust_backend_binary()
+rust_binaries = (
+    collect_rust_binary("PNG_RUST_BACKEND_BIN", "backend") +
+    collect_rust_binary(
+        "PNG_HUD_RENDERER_BIN",
+        "HUD renderer",
+        expected_names=["hud-renderer", "lap_timer", "track_radar", "timing_tower"],
+    )
+)
 
 # Automatically collect all assets and frontend files
 datas = []

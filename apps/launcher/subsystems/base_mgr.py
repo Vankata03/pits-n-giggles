@@ -58,6 +58,7 @@ class ExitReason:
     message: str
     can_restart: bool
     settings_field: Optional[str] = None
+    show_dialog: bool = True
 
 @dataclass(slots=True, frozen=True)
 class PngAppMgrConfig:
@@ -89,6 +90,7 @@ class PngAppMgrBase(QObject):
             title="Lost Connection to Parent",
             message="The parent process has probably been orphaned. Terminating...",
             can_restart=True,
+            show_dialog=False,
         ),
         PNG_ERROR_CODE_UNSUPPORTED_OS: ExitReason(
             code=PNG_ERROR_CODE_UNSUPPORTED_OS,
@@ -267,7 +269,8 @@ class PngAppMgrBase(QObject):
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    stdin=subprocess.PIPE
+                    stdin=subprocess.PIPE,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
 
                 self.is_running = True
@@ -513,10 +516,15 @@ class PngAppMgrBase(QObject):
         reason = self.exit_reasons.get(ret_code, self.exit_reasons[PNG_ERROR_CODE_UNKNOWN])
         self._update_status(reason.status)
 
-        if reason.settings_field:
-            self.show_error(reason.title, f"{reason.message}\nField: {reason.settings_field}")
+        if reason.show_dialog:
+            if reason.settings_field:
+                self.show_error(reason.title, f"{reason.message}\nField: {reason.settings_field}")
+            else:
+                self.show_error(reason.title, reason.message)
+        elif reason.settings_field:
+            self.error_log(f"{reason.title}: {reason.message} Field: {reason.settings_field}")
         else:
-            self.show_error(reason.title, reason.message)
+            self.error_log(f"{reason.title}: {reason.message}")
 
         # Run post-stop hook
         if self._post_stop_hook:

@@ -447,9 +447,9 @@ impl PacketEventData {
     pub const PACKET_LEN: usize = 16;
 
     pub fn parse(header: PacketHeader, packet: &[u8]) -> Result<Self, PacketParsingError> {
-        if packet.len() != Self::PACKET_LEN {
+        if packet.len() < Self::PACKET_LEN {
             return Err(PacketParsingError::new(format!(
-                "Received packet length {} is not equal to expected {}",
+                "Received packet length {} is smaller than expected {}",
                 packet.len(),
                 Self::PACKET_LEN
             )));

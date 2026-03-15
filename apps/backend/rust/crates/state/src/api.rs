@@ -666,14 +666,7 @@ impl SessionState {
     }
 
     pub fn stream_overlay_json(&self, show_sample_data_at_start: bool) -> Value {
-        let reference_index = if self.session_info.is_spectating.unwrap_or(false) {
-            self.session_info
-                .spectator_car_index
-                .or(self.player_index)
-                .map(usize::from)
-        } else {
-            self.player_index.map(usize::from)
-        };
+        let reference_index = self.stream_overlay_reference_index();
         let packet_format = self.session_info.packet_format;
         let event_type = match (packet_format, self.session_info.session_type_raw) {
             (Some(packet_format), Some(raw)) => Some(session_type_label(packet_format, raw)),
@@ -705,6 +698,7 @@ impl SessionState {
 
         json!({
             "show-sample-data-at-start": show_sample_data_at_start,
+            "ref-index": reference_index,
             "f1-game-year": self.session_info.game_year,
             "f1-packet-format": self.session_info.packet_format,
             "event-type": event_type,
@@ -763,6 +757,42 @@ impl SessionState {
         })
     }
 
+    pub fn input_telemetry_json(&self) -> Value {
+        let telemetry = self
+            .stream_overlay_reference_index()
+            .and_then(|index| self.driver(index))
+            .and_then(|driver| driver.packet_copies.car_telemetry.as_ref());
+
+        json!({
+            "car-telemetry": {
+                "throttle": telemetry.map(|value| value.throttle * 100.0).unwrap_or(0.0),
+                "brake": telemetry.map(|value| value.brake * 100.0).unwrap_or(0.0),
+                "steering": telemetry.map(|value| value.steer * 100.0).unwrap_or(0.0),
+                "rev-lights-percent": telemetry.map(|value| value.rev_lights_percent).unwrap_or(0),
+            },
+        })
+    }
+
+    pub fn track_radar_json(&self) -> Value {
+        json!({
+            "ref-index": self.stream_overlay_reference_index(),
+            "motion": self
+                .drivers
+                .iter()
+                .filter(|driver| driver.is_valid())
+                .map(|driver| {
+                    json!({
+                        "name": driver.driver_info.name,
+                        "team": driver.driver_info.team_id_raw.map(|team_id| team_label(self.session_info.packet_format.unwrap_or(2025), team_id)),
+                        "track-position": driver.driver_info.position,
+                        "index": driver.index,
+                        "motion": driver.packet_copies.motion.as_ref(),
+                    })
+                })
+                .collect::<Vec<_>>(),
+        })
+    }
+
     fn current_lap_for_periodic_update(&self) -> Option<u8> {
         let is_spectator = self.session_info.is_spectating.unwrap_or(false);
         if is_spectator {
@@ -775,6 +805,17 @@ impl SessionState {
             self.player_index
                 .and_then(|index| self.driver(index as usize))
                 .and_then(|driver| driver.lap_info.current_lap)
+        }
+    }
+
+    fn stream_overlay_reference_index(&self) -> Option<usize> {
+        if self.session_info.is_spectating.unwrap_or(false) {
+            self.session_info
+                .spectator_car_index
+                .or(self.player_index)
+                .map(usize::from)
+        } else {
+            self.player_index.map(usize::from)
         }
     }
 

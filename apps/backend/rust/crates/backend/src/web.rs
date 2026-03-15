@@ -94,6 +94,8 @@ pub fn build_router(
         .route("/race-info", get(race_info_handler))
         .route("/driver-info", get(driver_info_handler))
         .route("/stream-overlay-info", get(stream_overlay_info_handler))
+        .route("/hud/input-telemetry", get(input_telemetry_handler))
+        .route("/hud/track-radar", get(track_radar_handler))
         .route("/save-data", post(save_data_handler))
         .route("/control/stats", get(control_stats_handler))
         .route(
@@ -270,6 +272,14 @@ async fn driver_info_handler(
 
 async fn stream_overlay_info_handler(State(state): State<AppState>) -> impl IntoResponse {
     Json(current_stream_overlay_value(&state))
+}
+
+async fn input_telemetry_handler(State(state): State<AppState>) -> impl IntoResponse {
+    Json(current_input_telemetry_value(&state))
+}
+
+async fn track_radar_handler(State(state): State<AppState>) -> impl IntoResponse {
+    Json(current_track_radar_value(&state))
 }
 
 async fn save_data_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -551,6 +561,18 @@ fn current_stream_overlay_value(state: &AppState) -> Value {
     state.session_state.with_read(|session_state| {
         session_state.stream_overlay_json(state.show_overlay_sample_data_at_start)
     })
+}
+
+fn current_input_telemetry_value(state: &AppState) -> Value {
+    state
+        .session_state
+        .with_read(|session_state| session_state.input_telemetry_json())
+}
+
+fn current_track_radar_value(state: &AppState) -> Value {
+    state
+        .session_state
+        .with_read(|session_state| session_state.track_radar_json())
 }
 
 fn sse_stream<F, V>(

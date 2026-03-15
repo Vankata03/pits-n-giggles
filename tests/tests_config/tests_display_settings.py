@@ -44,8 +44,28 @@ class TestDisplaySettings(TestF1ConfigBase):
         self.assertEqual(settings.refresh_interval, 200)
         self.assertFalse(settings.disable_browser_autoload)
         self.assertEqual(settings.local_telemetry_rate, 5)
-        self.assertEqual(settings.realtime_overlay_fps, 60)
+        self.assertEqual(settings.telemetry_rate, 60)
+        self.assertEqual(settings.realtime_overlay_fps, 90)
         self.assertFalse(settings.use_cpu_acceleration)
+
+    def test_telemetry_rate_validation(self):
+        settings = DisplaySettings(telemetry_rate=120)
+        self.assertEqual(settings.telemetry_rate, 120)
+
+        settings = DisplaySettings(telemetry_rate=30)
+        self.assertEqual(settings.telemetry_rate, 30)
+
+        with self.assertRaises(ValidationError):
+            DisplaySettings(telemetry_rate=0)
+
+        with self.assertRaises(ValidationError):
+            DisplaySettings(telemetry_rate=-1)
+
+        with self.assertRaises(ValidationError):
+            DisplaySettings(telemetry_rate=None)
+
+        with self.assertRaises(ValidationError):
+            DisplaySettings(telemetry_rate="notanumber")
 
     def test_refresh_interval_validation(self):
         """Test refresh interval must be positive"""
@@ -99,12 +119,11 @@ class TestDisplaySettings(TestF1ConfigBase):
             DisplaySettings(local_telemetry_rate="notanumber")
 
     def test_realtime_overlay_fps_validation(self):
+        settings = DisplaySettings(realtime_overlay_fps=120)
+        self.assertEqual(settings.realtime_overlay_fps, 120)
+
         settings = DisplaySettings(realtime_overlay_fps=30)
         self.assertEqual(settings.realtime_overlay_fps, 30)
-
-        # Boundary condition
-        settings = DisplaySettings(realtime_overlay_fps=1)
-        self.assertEqual(settings.realtime_overlay_fps, 1)
 
         with self.assertRaises(ValidationError):
             DisplaySettings(realtime_overlay_fps=0)

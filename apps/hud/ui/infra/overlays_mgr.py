@@ -39,7 +39,6 @@ from lib.config import OverlayPosition, PngSettings
 from lib.rate_limiter import RateLimiter
 from lib.wdt import WatchDogTimerSync
 
-from .hf_types import InputTelemetryData, LiveSessionMotionInfo
 from .window_mgr import WindowManager
 
 # -------------------------------------- CLASSES -----------------------------------------------------------------------
@@ -65,6 +64,7 @@ class OverlaysMgr:
         load_fonts(debug_log_printer=self.logger.debug, error_log_printer=self.logger.error)
         self.debug_mode = debug
         self.running = False
+        self._overlays_visible = True
         self.rate_limiter = RateLimiter(interval_ms=settings.Display.refresh_interval)
         self.wdt = WatchDogTimerSync(
             status_callback=self._wdt_status_callback,
@@ -81,6 +81,9 @@ class OverlaysMgr:
             opacity=settings.HUD.overlays_opacity,
             windowed_overlay=settings.HUD.use_windowed_overlays,
             scale_factor=settings.HUD.lap_timer_ui_scale,
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=settings.Display.local_telemetry_interval_ms,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
         self._register_overlay_if_enabled(
@@ -97,6 +100,9 @@ class OverlaysMgr:
             show_ers_drs_info=settings.HUD.timing_tower_col_options.show_ers_drs_info,
             show_pens=settings.HUD.timing_tower_col_options.show_pens,
             show_tl_warns=settings.HUD.timing_tower_col_options.show_tl_warns,
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=settings.Display.local_telemetry_interval_ms,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
         self._register_overlay_if_enabled(
@@ -106,8 +112,10 @@ class OverlaysMgr:
             overlay_cfg=settings.HUD.layout[InputTelemetryOverlay.OVERLAY_ID],
             windowed_overlay=settings.HUD.use_windowed_overlays,
             scale_factor=settings.HUD.input_overlay_ui_scale,
-            refresh_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
-            window_duration_sec=settings.HUD.input_overlay_buffer_duration_sec
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=1000 // settings.Display.telemetry_rate,
+            window_duration_sec=settings.HUD.input_overlay_buffer_duration_sec,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
 
@@ -130,8 +138,10 @@ class OverlaysMgr:
             overlay_cfg=settings.HUD.layout[TrackRadarOverlay.OVERLAY_ID],
             windowed_overlay=settings.HUD.use_windowed_overlays,
             scale_factor=settings.HUD.track_radar_overlay_ui_scale,
-            refresh_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            render_interval_ms=settings.Display.realtime_overlay_update_interval_ms,
+            fetch_interval_ms=1000 // settings.Display.telemetry_rate,
             idle_opacity=settings.HUD.track_radar_idle_opacity,
+            base_url=f"http://127.0.0.1:{settings.Network.server_port}",
         )
 
         if settings.HUD.show_mfd:
@@ -162,6 +172,13 @@ class OverlaysMgr:
         """Stop the overlays manager"""
         self.running = False
         self.wdt.stop()
+        for overlay in self.window_manager.overlays.values():
+            shutdown = getattr(overlay, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown()
+                except Exception as e:  # pylint: disable=broad-except
+                    self.logger.exception("Failed to stop overlay cleanly: %s", e)
         QMetaObject.invokeMethod(
             self.app,
             "quit",
@@ -190,8 +207,6 @@ class OverlaysMgr:
 
     def stream_overlays_update(self, data):
         """Handle the stream overlay update event"""
-        self._input_telemetry_update(data)
-        self._motion_update(data)
         if self.rate_limiter.allows("stream-overlay-update"):
             self.window_manager.unicast_data(MfdOverlay.OVERLAY_ID , 'stream_overlay_update', data)
 
@@ -204,7 +219,7 @@ class OverlaysMgr:
         if oid:
             self.window_manager.unicast_data(oid, '__toggle_visibility__', {}, high_prio=True)
         else:
-            self.window_manager.broadcast_data('__toggle_visibility__', {}, high_prio=True)
+            self._set_overlays_visibility(not self._overlays_visible)
 
     def on_locked_state_change(self, args: Dict[str, bool]):
         """Handle locked state change."""
@@ -236,6 +251,7 @@ class OverlaysMgr:
 
         # If unlocking, nothing to persist
         if not locked_value:
+            self._overlays_visible = True
             return rsp
 
         # --------------------------------------------------
@@ -322,7 +338,12 @@ class OverlaysMgr:
         """Set overlays scale factor to specified overlay"""
 
         self.logger.debug(f"Setting overlay {oid} scale factor to {scale_factor}")
-        self.window_manager.unicast_data(oid, '__set_scale_factor__', {'scale_factor': scale_factor})
+        self.window_manager.unicast_data(
+            oid,
+            '__set_scale_factor__',
+            {'scale_factor': scale_factor},
+            high_prio=True,
+        )
 
     def set_track_radar_idle_opacity(self, opacity: int):
         self.logger.debug(f"Setting track radar idle opacity to {opacity}%")
@@ -378,21 +399,8 @@ class OverlaysMgr:
             )
         )
 
-    def _input_telemetry_update(self, data: Dict[str, Any]):
-        """Send input telemetry data to input telemetry overlay."""
-        self.window_manager.unicast_high_freq_data(
-            InputTelemetryOverlay.OVERLAY_ID,
-            InputTelemetryData.from_json(data)
-        )
-
-    def _motion_update(self, data: Dict[str, Any]):
-        """Send motion data to motion overlay."""
-        self.window_manager.unicast_high_freq_data(
-            TrackRadarOverlay.OVERLAY_ID,
-            LiveSessionMotionInfo.from_json(data)
-        )
-
     def _set_overlays_visibility(self, visible: bool):
+        self._overlays_visible = visible
         self.window_manager.broadcast_data("__set_visibility__", {"visible": visible}, high_prio=True)
 
     def _set_telemetry_active(self, active: bool):

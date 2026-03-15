@@ -75,29 +75,29 @@ class DisplaySettings(ConfigDiffMixin, BaseModel):
         }
     )
     telemetry_rate: int = Field(
-        default=30,
+        default=60,
         gt=0,
         description="Internal telemetry send rate (Hz)",
         json_schema_extra={
             "ui": {
                 "type" : "radio_buttons",
-                "options": [30, 60],
+                "options": [30, 60, 90, 120],
                 "visible": True,
                 "ext_info": [
-                    '30 Hz is good enough for most cases. '
-                    'Use 60 Hz if you want even higher accuracy in input and track radar overlays'
+                    '60 Hz is a better default for smoother HUD updates. '
+                    'Higher values can reduce latency further but increase CPU load.'
                 ]
             }
         }
     )
     realtime_overlay_fps: int = Field(
-        default=60,
+        default=90,
         gt=0,
         description="Realtime overlay FPS",
         json_schema_extra={
             "ui": {
                 "type" : "radio_buttons",
-                "options": [30, 60, 90],
+                "options": [30, 60, 90, 120],
                 "visible": True,
                 "ext_info": [
                     'Uses GPU. Higher FPS will cause more GPU load.'

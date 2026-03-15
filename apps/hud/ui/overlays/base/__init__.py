@@ -25,6 +25,7 @@
 from .base import BaseOverlay
 from .base_qml import BaseOverlayQML
 from .base_widget import BaseOverlayWidget
+from .rust_native import RustNativeOverlay
 
 # -------------------------------------- EXPORTS -----------------------------------------------------------------------
 
@@ -32,4 +33,5 @@ __all__ = [
     "BaseOverlay",
     "BaseOverlayQML",
     "BaseOverlayWidget",
+    "RustNativeOverlay",
 ]

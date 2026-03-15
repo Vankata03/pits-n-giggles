@@ -1,4 +1,4 @@
-use f1_types::{F1PacketType, PacketEventData, PacketHeader};
+use f1_types::{EventDetails, EventPacketType, F1PacketType, PacketEventData, PacketHeader};
 use serde_json::json;
 
 fn assert_f64_close(actual: f64, expected: f64) {
@@ -79,5 +79,22 @@ fn event_packet_parses_fastest_lap_2025() {
             .as_f64()
             .expect("lap-time f64"),
         68.58999633789062,
+    );
+}
+
+#[test]
+fn event_packet_parses_button_status_with_extra_trailing_bytes() {
+    let packet = PacketEventData::parse(
+        sample_header(2025),
+        b"BUTN\x00\x00\x00\x20\x00\x00\x00\x00\x00\x00\x00\x00\xAA\xBB\xCC\xDD",
+    )
+    .expect("parse");
+
+    assert_eq!(packet.event_code, EventPacketType::ButtonStatus);
+    assert_eq!(
+        packet.event_details,
+        Some(EventDetails::Buttons {
+            button_status: 0x2000_0000,
+        })
     );
 }
